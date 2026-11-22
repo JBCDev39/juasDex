@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type C
 import type { Db, EvoNode, Species, Variety } from '../types';
 import { defense, fmt, loadSpecies, pad, store } from '../data';
 import { GENS, MoveClass, Picker, REGIONS, Spinner, Sprite, TypeBadge, go, reducedMotion, type Opt } from './bits';
+import { animateSheet, flight, fly } from '../flight';
 
 const TABS = ['Datos', 'Debilidades', 'Movimientos', 'Ubicación'] as const;
 type Tab = (typeof TABS)[number];
@@ -19,8 +20,48 @@ const useNarrow = () => {
   return narrow;
 };
 
-export default function Detail({ db, id }: { db: Db; id: number }) {
+export default function Detail({ db, id, closing, onClosed }: { db: Db; id: number; closing: boolean; onClosed: () => void }) {
   const narrow = useNarrow();
+  const sheet = useRef<HTMLDivElement>(null);
+  const entered = useRef(false);
+  const firstId = useRef(id);
+  const [dir] = useState(() => ({ current: '' }));
+  dir.current = document.documentElement.dataset.nav ?? '';
+
+  // Entrada: la capa sube y el sprite vuela desde la tarjeta tocada
+  useLayoutEffect(() => {
+    if (entered.current || !sheet.current) return;
+    entered.current = true;
+    const hero = sheet.current.querySelector<HTMLElement>('.hero__sprite .sprite');
+    const src = flight.id === id ? flight.el : null;
+    flight.el = null;
+    if (src && hero) void fly(src, hero, 440);
+    void animateSheet(sheet.current, 'in');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mientras la ficha está abierta, la página de atrás no se mueve
+  useEffect(() => {
+    document.documentElement.classList.add('locked');
+    return () => document.documentElement.classList.remove('locked');
+  }, []);
+
+  // Salida: la capa baja y el sprite vuelve a su tarjeta (si está a la vista)
+  useLayoutEffect(() => {
+    if (!closing || !sheet.current) return;
+    document.documentElement.classList.remove('locked');
+    const hero = sheet.current.querySelector<HTMLElement>('.hero__sprite .sprite');
+    const card = document.querySelector<HTMLElement>(`[data-card="${id}"] .sprite`);
+    const jobs: Promise<void>[] = [animateSheet(sheet.current, 'out')];
+    if (hero && card) jobs.push(fly(hero, card, 400));
+    void Promise.all(jobs).then(onClosed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closing]);
+
+  const back = () => {
+    if (flight.fromList) { flight.fromList = false; history.back(); }
+    else go('', '', true);
+  };
   const [sp, setSp] = useState<Species | null>(null);
   const [failed, setFailed] = useState(false);
   const [vi, setVi] = useState(0);
@@ -37,7 +78,8 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
     setFailed(false);
     setVi(0);
     loadSpecies(id, db.meta.chunk).then((s) => alive && setSp(s)).catch(() => alive && setFailed(true));
-    window.scrollTo(0, 0);
+    if (id !== firstId.current && sheet.current) sheet.current.scrollTop = 0;
+    firstId.current = -1;
     store.set('last', id);
     store.set('recent', [id, ...store.get<number[]>('recent', []).filter((x) => x !== id)].slice(0, 5));
     return () => { alive = false; };
@@ -45,13 +87,15 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
 
   const chooseTab = (t: Tab) => { setTab(t); store.set('tab', t); };
   const total = db.index.length;
-  const prev = () => id > 1 && go(`pokemon-${id - 1}`, 'prev');
-  const next = () => id < total && go(`pokemon-${id + 1}`, 'next');
+  // Anterior/siguiente reemplazan el historial: "atrás" siempre regresa a la lista
+  const prev = () => id > 1 && go(`pokemon-${id - 1}`, 'prev', true);
+  const next = () => id < total && go(`pokemon-${id + 1}`, 'next', true);
 
   // Teclado: flechas para cambiar de Pokémon
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input, .pop')) return;
+      if (e.key === 'Escape' && !document.querySelector('.pop')) back();
       if (e.key === 'ArrowLeft') prev();
       if (e.key === 'ArrowRight') next();
     };
@@ -65,10 +109,10 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
   const tags = sp?.id === id ? [sp.legendary && 'Legendario', sp.mythical && 'Singular', sp.baby && 'Bebé'].filter(Boolean) as string[] : [];
 
   return (
-    <div className={`page detail t-bg-${ident(db, types[0])}`}>
+    <div ref={sheet} className={`sheet detail t-bg-${ident(db, types[0])}`} role="dialog" aria-modal="true" aria-label={entry[1]}>
       <header className="dex-top dex-top--detail">
         <div className="dex-top__inner nav-row">
-          <button className="nav-btn" onClick={() => go('')} aria-label="Volver al buscador">
+          <button className="nav-btn" onClick={back} aria-label="Volver">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
             <span>JuasDex</span>
           </button>
@@ -83,6 +127,7 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
         </div>
       </header>
 
+      <div key={id} className={`sheet__content from-${entered.current ? dir.current || 'none' : 'start'}`}>
       <section
         className="hero"
         onTouchStart={(e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
@@ -94,7 +139,7 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
         }}
       >
         <div className="screen">
-          <div className={`screen__glass${shiny ? ' is-shiny' : ''}`} style={{ viewTransitionName: 'hero-sprite' }}>
+          <div className={`screen__glass${shiny ? ' is-shiny' : ''}`}>
             <button
               key={hop}
               type="button"
@@ -150,6 +195,7 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
           </div>
         )}
       </main>
+      </div>
     </div>
   );
 }
@@ -274,9 +320,11 @@ function Typewriter({ text }: { text: string }) {
   useEffect(() => {
     if (reducedMotion()) { setN(text.length); return; }
     setN(0);
-    let i = 0;
-    const t = window.setInterval(() => { i += 2; setN(i); if (i >= text.length) window.clearInterval(t); }, 22);
-    return () => window.clearInterval(t);
+    let i = 0, t = 0;
+    const start = window.setTimeout(() => {
+      t = window.setInterval(() => { i += 2; setN(i); if (i >= text.length) window.clearInterval(t); }, 22);
+    }, 380); // espera a que termine la entrada
+    return () => { window.clearTimeout(start); window.clearInterval(t); };
   }, [text]);
   const done = n >= text.length;
   return (
@@ -404,7 +452,7 @@ function Arrow({ down }: { down?: boolean }) {
 function EvoCard({ db, id, current, i, how }: { db: Db; id: number; current: number; i: number; how?: string[] }) {
   const e = db.index[id - 1];
   return (
-    <button className={`evo__card${id === current ? ' is-on' : ''}`} style={{ '--i': Math.min(i, 10) } as CSSProperties} onClick={() => id !== current && go(`pokemon-${id}`)}>
+    <button className={`evo__card${id === current ? ' is-on' : ''}`} style={{ '--i': Math.min(i, 10) } as CSSProperties} onClick={() => id !== current && go(`pokemon-${id}`, '', true)}>
       <Sprite db={db} pid={id} size={60} />
       <span className="evo__name">{e?.[1]}</span>
       <span className="evo__types">{e?.[2].map((t) => <i key={t} className={`dot t-${ident(db, t)}`} />)}</span>

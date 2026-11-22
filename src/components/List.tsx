@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import type { Db } from '../types';
 import { pad, store } from '../data';
 import { Ball, GENS, GEN_STARTER, REGIONS, Sprite, TypeBadge, go } from './bits';
+import { flight } from '../flight';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 type Panel = '' | 'type' | 'region';
@@ -12,7 +13,7 @@ const session = {
   set: (k: string, v: string) => { try { sessionStorage.setItem('juasdex:' + k, v); } catch { /* sin almacenamiento */ } },
 };
 
-export default function List({ db }: { db: Db }) {
+export default function List({ db }: { db: Db; stamp?: number }) {
   const [q, setQ] = useState(() => store.get('q', ''));
   const [types, setTypes] = useState<number[]>(() => store.get('types', [] as number[]));
   const [gen, setGen] = useState(() => store.get('gen', 0));
@@ -23,7 +24,6 @@ export default function List({ db }: { db: Db }) {
   const padsRef = useRef<HTMLDivElement>(null);
   const searchPad = useRef<HTMLButtonElement>(null);
   const [edge, setEdge] = useState({ l: 0, r: 0 });
-  const last = store.get('last', 0);
   const recent = store.get<number[]>('recent', []).filter((id) => id >= 1 && id <= db.index.length);
   const active = Boolean(q.trim() || types.length || gen || all);
 
@@ -88,10 +88,10 @@ export default function List({ db }: { db: Db }) {
   };
 
   const open = (id: number, el?: HTMLElement) => {
-    // Solo el sprite tocado "vuela" hacia la ficha
-    document.querySelectorAll<HTMLElement>('[data-vt]').forEach((x) => { x.style.viewTransitionName = ''; });
-    const sprite = el?.querySelector<HTMLElement>('.sprite');
-    if (sprite) sprite.style.viewTransitionName = 'hero-sprite';
+    // El sprite tocado "vuela" hacia la ficha
+    flight.id = id;
+    flight.el = el?.querySelector<HTMLElement>('.sprite') ?? null;
+    flight.fromList = true;
     store.set('scroll', window.scrollY);
     go(`pokemon-${id}`);
   };
@@ -228,8 +228,8 @@ export default function List({ db }: { db: Db }) {
               <span className="recent__label">Recientes</span>
               <div className="recent__row">
                 {recent.map((id) => (
-                  <button key={id} className="recent__chip" onClick={(e) => open(id, e.currentTarget)}>
-                    <Sprite db={db} pid={id} size={32} vt={id} style={id === last ? { viewTransitionName: 'hero-sprite' } : undefined} />
+                  <button key={id} className="recent__chip" data-card={id} onClick={(e) => open(id, e.currentTarget)}>
+                    <Sprite db={db} pid={id} size={32} />
                     {db.index[id - 1][1]}
                   </button>
                 ))}
@@ -254,10 +254,10 @@ export default function List({ db }: { db: Db }) {
             <ul className="grid">
               {results.map(([id, name, ts], i) => (
                 <li key={id} style={i < 24 ? ({ '--i': i } as CSSProperties) : undefined} className={i < 24 ? 'in' : undefined}>
-                  <button className="card" onClick={(e) => open(id, e.currentTarget)}>
+                  <button className="card" data-card={id} onClick={(e) => open(id, e.currentTarget)}>
                     <span className="card__num">#{pad(id)}</span>
                     <span className="card__sprite">
-                      <Sprite db={db} pid={id} size={80} vt={id} style={id === last ? { viewTransitionName: 'hero-sprite' } : undefined} />
+                      <Sprite db={db} pid={id} size={80} />
                     </span>
                     <span className="card__name">{name}</span>
                     <span className="card__types">{ts.map((t) => <TypeBadge key={t} db={db} id={t} small />)}</span>

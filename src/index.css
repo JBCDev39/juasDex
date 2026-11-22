@@ -46,7 +46,18 @@ LAYOUT  Inicio = solo carcasa con buscador; al buscar sube y aparecen resultados
 :root[data-theme='dark'] { color-scheme: dark; }
 
 * { box-sizing: border-box; min-width: 0; }
-html { -webkit-tap-highlight-color: transparent; }
+html { -webkit-tap-highlight-color: transparent; scrollbar-gutter: stable; }
+html.locked { overflow: hidden; }
+/* Lo que queda debajo de la ficha deja de animarse para no gastar */
+html.locked .home__ball, html.locked .leds i::after, html.locked .lens::after { animation-play-state: paused; }
+
+/* La ficha: una capa encima de la lista con su propio scroll */
+.sheet { position: fixed; inset: 0; z-index: 20; overflow-y: auto; overscroll-behavior: contain; background: var(--bg); will-change: transform, opacity; }
+.sheet__content.from-next { animation: slide-from-r 0.32s var(--ease); }
+.sheet__content.from-prev { animation: slide-from-l 0.32s var(--ease); }
+.sheet__content.from-none { animation: fade 0.28s var(--ease); }
+@keyframes slide-from-r { from { opacity: 0; transform: translateX(36px); } }
+@keyframes slide-from-l { from { opacity: 0; transform: translateX(-36px); } }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 'Rubik', system-ui, sans-serif; overflow-x: clip; }
 button, select, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -356,7 +367,7 @@ button:disabled { cursor: default; opacity: 0.35; }
 
 .hero__info { display: grid; gap: 4px; justify-items: start; }
 .hero__num { font: 700 15px/1 var(--display); color: var(--lens); letter-spacing: 0.04em; }
-.hero__name { margin: 0; font: 700 clamp(28px, 6vw, 46px)/1.05 var(--display); text-wrap: balance; view-transition-name: hero-name; }
+.hero__name { margin: 0; font: 700 clamp(28px, 6vw, 46px)/1.05 var(--display); text-wrap: balance; }
 .hero__form { font-size: 14px; color: #aeb7c0; }
 .hero__genus { color: #c9d1d8; font-size: 15px; }
 .hero__types { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
@@ -387,9 +398,9 @@ button:disabled { cursor: default; opacity: 0.35; }
 .panel__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .panel__head h3 { margin: 0; }
 .pill { padding: 4px 12px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: color-mix(in srgb, var(--accent) 70%, var(--ink)); font-weight: 600; font-size: 13px; white-space: nowrap; animation: pop 0.45s var(--spring) 0.3s both; }
-.stack-gap > * { animation: rise 0.45s var(--ease) both; }
-.stack-gap > :nth-child(2) { animation-delay: 0.05s; } .stack-gap > :nth-child(3) { animation-delay: 0.1s; }
-.stack-gap > :nth-child(4) { animation-delay: 0.15s; } .stack-gap > :nth-child(5) { animation-delay: 0.2s; }
+.stack-gap > * { animation: rise 0.45s var(--ease) 0.12s both; }
+.stack-gap > :nth-child(2) { animation-delay: 0.17s; } .stack-gap > :nth-child(3) { animation-delay: 0.22s; }
+.stack-gap > :nth-child(4) { animation-delay: 0.27s; } .stack-gap > :nth-child(5) { animation-delay: 0.32s; }
 .note { margin: 0; font-size: 13.5px; color: var(--muted); }
 
 /* Entrada de la Pokédex */
@@ -542,19 +553,6 @@ button:disabled { cursor: default; opacity: 0.35; }
 .place__body { display: grid; gap: 3px; }
 .place strong { font-weight: 600; }
 .place__meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; color: var(--muted); }
-
-/* ---------- Transiciones entre pantallas ---------- */
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.3s; animation-timing-function: var(--ease); }
-::view-transition-group(hero-sprite) { animation-duration: 0.45s; animation-timing-function: var(--ease); }
-::view-transition-group(hero-name) { animation-duration: 0.35s; }
-html[data-nav='next']::view-transition-old(root) { animation: 0.3s var(--ease) both vt-out-left; }
-html[data-nav='next']::view-transition-new(root) { animation: 0.3s var(--ease) both vt-in-right; }
-html[data-nav='prev']::view-transition-old(root) { animation: 0.3s var(--ease) both vt-out-right; }
-html[data-nav='prev']::view-transition-new(root) { animation: 0.3s var(--ease) both vt-in-left; }
-@keyframes vt-out-left { to { opacity: 0; transform: translateX(-40px); } }
-@keyframes vt-in-right { from { opacity: 0; transform: translateX(40px); } }
-@keyframes vt-out-right { to { opacity: 0; transform: translateX(40px); } }
-@keyframes vt-in-left { from { opacity: 0; transform: translateX(-40px); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: 0.001ms !important; }

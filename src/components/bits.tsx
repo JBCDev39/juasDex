@@ -53,10 +53,11 @@ export function Ball({ className, size = 24 }: { className?: string; size?: numb
 
 export const Spinner = () => <Ball className="spin-ball" size={28} />;
 
-/** Navega con transición si el navegador la soporta. dir = dirección de deslizamiento */
-export const go = (hash: string, dir: 'next' | 'prev' | '' = '') => {
+/** Navega por el hash. dir = dirección de deslizamiento; replace = no apilar en el historial */
+export const go = (hash: string, dir: 'next' | 'prev' | '' = '', replace = false) => {
   document.documentElement.dataset.nav = dir;
-  location.hash = hash;
+  if (replace) location.replace(`#${hash}`);
+  else location.hash = hash;
 };
 
 export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;

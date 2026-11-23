@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import type { Db } from '../types';
 import { favs, pad, store } from '../data';
-import { Ball, Chevron, GENS, GEN_STARTER, MoveClass, REGIONS, Sprite, TypeBadge, reducedMotion } from './bits';
+import { Ball, Chevron, GENS, MoveClass, REGIONS, Sprite, TypeBadge, reducedMotion } from './bits';
+import { glyphPaths } from './glyphs';
 import { flight } from '../flight';
 import { nav } from '../nav';
 
@@ -9,6 +10,7 @@ const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 type Panel = '' | 'type' | 'region';
 type Tab = 'pokemon' | 'mov' | 'hab';
 const TAB_LABEL: Record<Tab, string> = { pokemon: 'Pokémon', mov: 'Movimientos', hab: 'Habilidades' };
+const TABS: Tab[] = ['pokemon', 'mov', 'hab'];
 
 // La pestaña elegida solo se recuerda durante la sesión
 const session = {
@@ -24,19 +26,26 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const [tab, setTabState] = useState<Tab>(() => session.get('tab', 'pokemon') as Tab);
   const [panel, setPanel] = useState<Panel>('');
   const [searching, setSearching] = useState(false);
+  const [listSearch, setListSearch] = useState(false);
+  const [listFilters, setListFilters] = useState(false);
   const [ready, setReady] = useState(false);
   const [past, setPast] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const listInput = useRef<HTMLInputElement>(null);
   const padsRef = useRef<HTMLDivElement>(null);
   const searchPad = useRef<HTMLButtonElement>(null);
   const hero = useRef<HTMLElement>(null);
   const listTop = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const homeInner = useRef<HTMLDivElement>(null);
+  const listBar = useRef<HTMLDivElement>(null);
+  const anchorList = useRef(false); // si se busca/filtra desde la lista, la vista se queda en la lista
   const [edge, setEdge] = useState({ l: 0, r: 0 });
   const recent = store.get<number[]>('recent', []).filter((id) => id >= 1 && id <= db.index.length);
   const favList = favs.list();
   const favSet = new Set(favList);
   const active = Boolean(q.trim() || types.length || gen || favOnly);
+  const filterCount = (types.length ? 1 : 0) + (gen ? 1 : 0) + (favOnly ? 1 : 0);
 
   // La lista completa se dibuja después de mostrar el inicio, para que la app abra rápido
   useEffect(() => {
@@ -45,13 +54,17 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     else window.setTimeout(() => setReady(true), 200);
   }, []);
 
-  // Botón flotante para volver arriba cuando el inicio ya no se ve
+  // ¿Ya no se ven los botones del inicio? → aparecen los botones flotantes
   useEffect(() => {
     let raf = 0;
     const on = () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => setPast(window.scrollY > (hero.current?.offsetHeight ?? 600) * 0.7));
+      raf = requestAnimationFrame(() => {
+        const pads = padsRef.current?.getBoundingClientRect();
+        setPast(pads ? pads.bottom < 0 : window.scrollY > 400);
+      });
     };
+    on();
     window.addEventListener('scroll', on, { passive: true });
     return () => { window.removeEventListener('scroll', on); cancelAnimationFrame(raf); };
   }, []);
@@ -75,16 +88,38 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   // "/" abre la búsqueda en computadora
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && !document.querySelector('.sheet')) { e.preventDefault(); openSearch(); }
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && !document.querySelector('.sheet')) {
+        e.preventDefault();
+        if (past) openListSearch(); else openSearch();
+      }
     };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   });
 
+  // Tocar afuera cierra los paneles de filtros
+  useEffect(() => {
+    if (!panel && !listFilters) return;
+    const away = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (panel && !homeInner.current?.querySelector('.drawer')?.contains(t) && !padsRef.current?.contains(t)) setPanel('');
+      if (listFilters && !listBar.current?.contains(t)) setListFilters(false);
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [panel, listFilters]);
+
   const openSearch = () => {
     setPanel('');
     setSearching(true);
+    anchorList.current = false;
     input.current?.focus({ preventScroll: true }); // en el mismo toque, para que salga el teclado
+  };
+  const openListSearch = () => {
+    setListFilters(false);
+    setListSearch(true);
+    anchorList.current = true;
+    listInput.current?.focus({ preventScroll: true });
   };
 
   /* ---------- Filtros ---------- */
@@ -107,6 +142,14 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const abil = useMemo(() => allAbil.filter(([, a]) => (!gen || a[2] === gen) && (!nq || norm(a[0]).includes(nq))), [allAbil, nq, gen]);
   const counts: Record<Tab, number> = { pokemon: pokemon.length, mov: moves.length, hab: abil.length };
 
+  // Al buscar o filtrar desde la lista: el inicio se acomoda sin animar (está fuera de la vista)
+  // y la vista se queda al principio de los resultados, sin saltos.
+  useLayoutEffect(() => {
+    if (!anchorList.current || !listTop.current) return;
+    const y = listTop.current.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: y, behavior: 'auto' });
+  }, [nq, types, gen, favOnly, tab]);
+
   const save = (k: string, v: unknown) => { store.set(k, v); store.set('scroll', 0); };
   const setQuery = (v: string) => { setQ(v); save('q', v); };
   const setTab = (t: Tab) => { setTabState(t); session.set('tab', t); };
@@ -115,24 +158,24 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     const next = types.includes(t) ? types.filter((x) => x !== t) : [...types, t].slice(-2);
     setTypes(next); save('types', next);
   };
-  const pickGen = (g: number) => { const v = g === gen ? 0 : g; setGen(v); save('gen', v); setPanel(''); };
-  const toggleFav = () => { const v = !favOnly; setFavOnly(v); save('favOnly', v); setPanel(''); if (v) setTab('pokemon'); };
+  const clearTypes = () => { setTypes([]); save('types', []); };
+  const pickGen = (g: number, close = true) => { const v = g === gen ? 0 : g; setGen(v); save('gen', v); if (close) setPanel(''); };
+  const toggleFav = (close = true) => { const v = !favOnly; setFavOnly(v); save('favOnly', v); if (close) setPanel(''); if (v) setTab('pokemon'); };
   const clearAll = () => {
     setQuery(''); setTypes([]); setGen(0); setFavOnly(false);
     save('types', []); save('gen', 0); save('favOnly', false); setPanel('');
   };
   const toList = () => listTop.current?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
-  const toTop = () => window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
+  const toTop = () => { anchorList.current = false; window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' }); };
 
   const open = (id: number, el?: HTMLElement) => {
-    // El sprite tocado "vuela" hacia la ficha
-    flight.id = id;
+    flight.id = id; // el sprite tocado "vuela" hacia la ficha
     flight.el = el?.querySelector<HTMLElement>('.sprite') ?? null;
     store.set('scroll', window.scrollY);
     nav.push(`pokemon-${id}`);
   };
 
-  // Las tarjetas aparecen al entrar en pantalla (todas las que se ven, no solo las primeras)
+  // Las tarjetas aparecen al entrar en pantalla (todas las que se ven)
   useEffect(() => {
     const root = gridRef.current;
     if (!root) return;
@@ -152,19 +195,16 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     return () => io.disconnect();
   }, [pokemon, moves, abil, tab, ready]);
 
-  const typeColor = (t: number) => `var(--c-${db.meta.types[t]?.[1]})`;
-  const typeFace: CSSProperties | undefined = types.length === 1
-    ? { background: typeColor(types[0]) }
-    : types.length === 2 ? { background: `linear-gradient(135deg, ${typeColor(types[0])} 50%, ${typeColor(types[1])} 50%)` } : undefined;
-  const tabIdx = (['pokemon', 'mov', 'hab'] as Tab[]).indexOf(tab);
-  const otherHits = (['pokemon', 'mov', 'hab'] as Tab[]).filter((t) => t !== tab && nq && counts[t] > 0);
+  const tabIdx = TABS.indexOf(tab);
+  const otherHits = TABS.filter((t) => t !== tab && nq && counts[t] > 0);
+  const instant = anchorList.current && (listSearch || listFilters || past);
 
   return (
-    <div className={`home${active ? ' is-active' : ''}`}>
+    <div className={`home${active ? ' is-active' : ''}${panel ? ' has-panel' : ''}${instant ? ' is-instant' : ''}`}>
       <header className="home__hero" ref={hero}>
         <Ball className="home__ball" size={520} />
         <span className="leds" aria-hidden><i /><i /><i /></span>
-        <div className="home__inner">
+        <div className="home__inner" ref={homeInner}>
           <h1 className="wordmark">JuasDex</h1>
 
           <div className={`pads${searching ? ' is-searching' : ''}`} ref={padsRef}>
@@ -173,13 +213,12 @@ export default function List({ db }: { db: Db; stamp?: number }) {
             </PadButton>
             <PadButton
               label={types.length ? types.map((t) => db.meta.types[t][0]).join(' + ') : 'Tipo'}
-              color="blue"
+              color="ball"
               on={panel === 'type' || types.length > 0}
               open={panel === 'type'}
-              face={typeFace}
               onClick={() => setPanel(panel === 'type' ? '' : 'type')}
             >
-              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden><path d="M12 3c3.5 4.2 6 7.5 6 10.5A6 6 0 0 1 6 13.5C6 10.5 8.5 7.2 12 3Z" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round" /></svg>
+              <TypeBall db={db} selected={types} />
             </PadButton>
             <PadButton
               label={gen ? REGIONS[gen - 1] : 'Región'}
@@ -188,12 +227,12 @@ export default function List({ db }: { db: Db; stamp?: number }) {
               open={panel === 'region'}
               onClick={() => setPanel(panel === 'region' ? '' : 'region')}
             >
-              {gen ? <Sprite db={db} pid={GEN_STARTER[gen - 1]} size={44} /> : (
+              {gen ? <span key={gen} className="pad__numeral">{GENS[gen - 1]}</span> : (
                 <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20Z M9 4v13.5 M15 6.5V20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" /></svg>
               )}
             </PadButton>
-            <PadButton label={favOnly ? `Favoritos (${favList.length})` : 'Favoritos'} color="orange" on={favOnly} onClick={toggleFav}>
-              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z" fill={favOnly ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" /></svg>
+            <PadButton label={favOnly ? `Favoritos (${favList.length})` : 'Favoritos'} color="orange" on={favOnly} onClick={() => toggleFav()}>
+              <StarIcon filled={favOnly} />
             </PadButton>
 
             <div className="sbar" style={{ '--l': `${edge.l}px`, '--r': `${edge.r}px` } as CSSProperties} aria-hidden={!searching}>
@@ -212,61 +251,44 @@ export default function List({ db }: { db: Db; stamp?: number }) {
                 autoComplete="off"
                 enterKeyHint="search"
               />
-              {q && (
-                <button type="button" className="sbar__clear" tabIndex={searching ? 0 : -1} onPointerDown={(e) => e.preventDefault()} onClick={() => setQuery('')} aria-label="Borrar búsqueda">
-                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" /></svg>
-                </button>
-              )}
+              {q && <ClearButton tabbable={searching} onClear={() => setQuery('')} />}
             </div>
           </div>
 
-          <div className={`drawer${panel ? ' is-open' : ''}`}>
-            <div className="drawer__clip">
-              <div className="drawer__body">
-                {panel === 'type' && (
-                  <>
-                    <div className="drawer__head">
-                      <span>Elija hasta 2 tipos</span>
-                      {types.length > 0 && <button className="drawer__link" onClick={() => { setTypes([]); save('types', []); }}>Quitar</button>}
-                    </div>
-                    <div className="typegrid">
-                      {Object.entries(db.meta.types).map(([id, [name, ident]]) => (
-                        <button key={id} className={`tchip t-${ident}${types.includes(+id) ? ' is-on' : ''}`} aria-pressed={types.includes(+id)} onClick={() => toggleType(+id)}>{name}</button>
-                      ))}
-                    </div>
-                  </>
-                )}
-                {panel === 'region' && (
-                  <>
-                    <div className="drawer__head">
-                      <span>Elija una región</span>
-                      {gen > 0 && <button className="drawer__link" onClick={() => pickGen(gen)}>Quitar</button>}
-                    </div>
-                    <div className="regiongrid">
-                      {GENS.map((g, i) => (
-                        <button key={g} className={`rchip${gen === i + 1 ? ' is-on' : ''}`} aria-pressed={gen === i + 1} onClick={() => pickGen(i + 1)}>
-                          <Sprite db={db} pid={GEN_STARTER[i]} size={40} />
-                          <span className="rchip__name">{REGIONS[i]}</span>
-                          <span className="rchip__hint">Gen. {g}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+          <Drawer open={Boolean(panel)} which={panel}>
+            {(which) => which === 'region' ? (
+              <>
+                <div className="drawer__head">
+                  <span>Elija una región</span>
+                  {gen > 0 && <button className="drawer__link" onClick={() => pickGen(gen)}>Quitar</button>}
+                </div>
+                <RegionGrid gen={gen} onPick={(g) => pickGen(g)} />
+              </>
+            ) : (
+              <>
+                <div className="drawer__head">
+                  <span>Elija hasta 2 tipos</span>
+                  {types.length > 0 && <button className="drawer__link" onClick={clearTypes}>Quitar</button>}
+                </div>
+                <TypeGrid db={db} types={types} onToggle={toggleType} />
+              </>
+            )}
+          </Drawer>
 
-          {!active && recent.length > 0 && (
-            <div className="recent">
-              <span className="recent__label">Recientes</span>
-              <div className="recent__row">
-                {recent.map((id) => (
-                  <button key={id} className="recent__chip" data-card={id} onClick={(e) => open(id, e.currentTarget)}>
-                    <Sprite db={db} pid={id} size={32} />
-                    {db.index[id - 1][1]}
-                  </button>
-                ))}
+          {recent.length > 0 && (
+            <div className={`recent-wrap${active || panel ? ' is-hidden' : ''}`}>
+              <div className="recent-wrap__clip">
+                <div className="recent">
+                  <span className="recent__label">Recientes</span>
+                  <div className="recent__row">
+                    {recent.map((id) => (
+                      <button key={id} className="recent__chip" data-card={active ? undefined : id} tabIndex={active || panel ? -1 : 0} onClick={(e) => open(id, e.currentTarget)}>
+                        <Sprite db={db} pid={id} size={32} />
+                        {db.index[id - 1][1]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -281,15 +303,53 @@ export default function List({ db }: { db: Db; stamp?: number }) {
 
       <section className="dexlist">
         <div ref={listTop} className="dexlist__anchor" />
-        <div className="dexlist__bar">
-          <div className="seg seg--tabs" role="tablist" style={{ '--idx': tabIdx, '--n': 3 } as CSSProperties}>
-            <span className="seg__pill" aria-hidden />
-            {(['pokemon', 'mov', 'hab'] as Tab[]).map((t) => (
-              <button key={t} role="tab" aria-selected={t === tab} className={`seg__btn${t === tab ? ' is-on' : ''}`} onClick={() => setTab(t)}>
-                {TAB_LABEL[t]}{nq ? <small> {counts[t]}</small> : null}
-              </button>
-            ))}
+        <div className="dexlist__bar" ref={listBar}>
+          <div className="dexlist__row">
+            <div className="seg seg--tabs" role="tablist" style={{ '--idx': tabIdx, '--n': 3 } as CSSProperties}>
+              <span className="seg__pill" aria-hidden />
+              {TABS.map((t) => (
+                <button key={t} role="tab" aria-selected={t === tab} className={`seg__btn${t === tab ? ' is-on' : ''}`} onClick={() => setTab(t)}>
+                  {TAB_LABEL[t]}{nq ? <small> {counts[t]}</small> : null}
+                </button>
+              ))}
+            </div>
+            <button
+              className={`filter-btn${listFilters ? ' is-open' : ''}${filterCount ? ' has-filters' : ''}`}
+              aria-expanded={listFilters}
+              aria-label="Filtros"
+              onClick={() => { setListSearch(false); anchorList.current = true; setListFilters((x) => !x); }}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" /></svg>
+              <span className="filter-btn__label">Filtros</span>
+              {filterCount > 0 && <span key={filterCount} className="filter-btn__count">{filterCount}</span>}
+            </button>
           </div>
+          <Drawer open={listFilters} which="all" variant="list">
+            {() => (
+              <>
+                <div className="lf__row">
+                  <span className="lf__title">Favoritos</span>
+                  <button className={`lf__fav${favOnly ? ' is-on' : ''}`} aria-pressed={favOnly} onClick={() => toggleFav(false)}>
+                    <StarIcon filled={favOnly} size={18} /> {favOnly ? 'Solo favoritos' : 'Mostrar solo favoritos'}
+                  </button>
+                </div>
+                <div className="lf__row lf__row--head">
+                  <span className="lf__title">Tipo <small>(hasta 2)</small></span>
+                  {types.length > 0 && <button className="lf__link" onClick={clearTypes}>Quitar</button>}
+                </div>
+                <TypeGrid db={db} types={types} onToggle={toggleType} />
+                <div className="lf__row lf__row--head">
+                  <span className="lf__title">Región</span>
+                  {gen > 0 && <button className="lf__link" onClick={() => pickGen(gen, false)}>Quitar</button>}
+                </div>
+                <RegionGrid gen={gen} onPick={(g) => pickGen(g, false)} plain />
+                <div className="lf__foot">
+                  {filterCount > 0 && <button className="lf__link" onClick={() => { setTypes([]); setGen(0); setFavOnly(false); save('types', []); save('gen', 0); save('favOnly', false); }}>Quitar todos</button>}
+                  <button className="lf__done" onClick={() => setListFilters(false)}>Listo</button>
+                </div>
+              </>
+            )}
+          </Drawer>
         </div>
 
         <div className="list-wrap">
@@ -298,7 +358,7 @@ export default function List({ db }: { db: Db; stamp?: number }) {
               {counts[tab]} {tab === 'pokemon' ? 'Pokémon' : tab === 'mov' ? (counts[tab] === 1 ? 'movimiento' : 'movimientos') : (counts[tab] === 1 ? 'habilidad' : 'habilidades')}
               {favOnly && tab === 'pokemon' ? ' favoritos' : ''}
             </span>
-            {active && <button className="link-btn" onClick={clearAll}>Limpiar filtros</button>}
+            {active && <button className="link-btn" onClick={clearAll}>Limpiar todo</button>}
           </p>
           {tab === 'hab' && types.length > 0 && <p className="note note--inline">El filtro de tipo no aplica a habilidades.</p>}
           {tab !== 'pokemon' && favOnly && <p className="note note--inline">Favoritos solo aplica a Pokémon.</p>}
@@ -318,9 +378,7 @@ export default function List({ db }: { db: Db; stamp?: number }) {
                     <li key={id} className="reveal">
                       <button className={`card t-${db.meta.types[ts[0]]?.[1]}`} data-card={id} onClick={(e) => open(id, e.currentTarget)}>
                         <span className="card__num">#{pad(id)}</span>
-                        {favSet.has(id) && (
-                          <svg className="card__fav" viewBox="0 0 24 24" width="16" height="16" aria-label="Favorito"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z" fill="currentColor" /></svg>
-                        )}
+                        {favSet.has(id) && <StarIcon filled size={16} className="card__fav" />}
                         <span className="card__sprite"><Sprite db={db} pid={id} size={88} /></span>
                         <span className="card__name">{name}</span>
                         <span className="card__types">{ts.map((t) => <TypeBadge key={t} db={db} id={t} small />)}</span>
@@ -365,7 +423,7 @@ export default function List({ db }: { db: Db; stamp?: number }) {
                     <li key={id} className="reveal">
                       <button className="arow" onClick={() => nav.push(`hab-${id}`)}>
                         <span className="arow__main">
-                          <span className="arow__top"><strong>{a[0]}</strong><span className="arow__gen">{REGIONS[a[2] - 1]}</span></span>
+                          <span className="arow__top"><strong>{a[0]}</strong><span className="arow__gen">Gen. {GENS[a[2] - 1]}</span></span>
                           {a[1] && <span className="arow__desc">{a[1]}</span>}
                         </span>
                         <Chevron />
@@ -383,10 +441,135 @@ export default function List({ db }: { db: Db; stamp?: number }) {
         </div>
       </section>
 
-      <button className={`fab-top${past ? ' is-on' : ''}`} onClick={toTop} aria-label="Volver al inicio" tabIndex={past ? 0 : -1}>
+      {/* Búsqueda flotante (abajo a la izquierda) y botón para volver arriba */}
+      <div className={`lsearch${past || listSearch ? ' is-on' : ''}${listSearch ? ' is-open' : ''}${q ? ' has-query' : ''}`}>
+        <button className="lsearch__cap" onClick={openListSearch} aria-label="Buscar" tabIndex={past && !listSearch ? 0 : -1}>
+          <SearchIcon />
+        </button>
+        <input
+          ref={listInput}
+          type="search"
+          value={q}
+          placeholder={`Buscar en ${TAB_LABEL[tab]}`}
+          aria-label="Buscar en la lista"
+          tabIndex={listSearch ? 0 : -1}
+          onChange={(e) => { anchorList.current = true; setQuery(e.target.value); }}
+          onFocus={() => setListSearch(true)}
+          onBlur={() => setListSearch(false)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur(); }}
+          autoComplete="off"
+          enterKeyHint="search"
+        />
+        {q && <ClearButton tabbable={listSearch} onClear={() => { anchorList.current = true; setQuery(''); }} />}
+      </div>
+      <button className={`fab-top${past && !listSearch ? ' is-on' : ''}`} onClick={toTop} aria-label="Volver al inicio" tabIndex={past ? 0 : -1}>
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
     </div>
+  );
+}
+
+/* ---------- Piezas ---------- */
+
+/** Panel que se despliega: al cerrar conserva su contenido; al cambiar de contenido, cambia de alto suavemente */
+function Drawer({ open, which, variant, children }: { open: boolean; which: string; variant?: 'list'; children: (which: string) => ReactNode }) {
+  const last = useRef(which);
+  if (which) last.current = which;
+  const shown = which || last.current; // al cerrarse, sigue mostrando lo último mientras se pliega
+  const clip = useRef<HTMLDivElement>(null);
+  const prevH = useRef(0);
+  const prevShown = useRef(shown);
+  useLayoutEffect(() => {
+    const el = clip.current;
+    if (!el) return;
+    const h = el.offsetHeight;
+    if (open && prevShown.current !== shown && prevH.current > 0 && !reducedMotion()) {
+      el.animate([{ height: `${prevH.current}px` }, { height: `${h}px` }], { duration: 340, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+    }
+    prevShown.current = shown;
+    prevH.current = h;
+  });
+  return (
+    <div className={`drawer${open ? ' is-open' : ''}${variant ? ` drawer--${variant}` : ''}`}>
+      <div className="drawer__clip" ref={clip}>
+        <div className="drawer__body">
+          {shown && <div key={shown} className="drawer__content">{children(shown)}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Pokébola de tipos: la mitad de arriba y el símbolo del centro van cambiando de tipo */
+function TypeBall({ db, selected }: { db: Db; selected: number[] }) {
+  const all = useMemo(() => Object.keys(db.meta.types).map(Number), [db]);
+  const pool = selected.length ? selected : all;
+  const [i, setI] = useState(() => Math.floor(Math.random() * 18));
+  useEffect(() => {
+    if (selected.length) setI(0);
+    if (pool.length < 2 || reducedMotion()) return;
+    const t = window.setInterval(() => {
+      if (document.hidden || document.documentElement.classList.contains('locked')) return;
+      setI((x) => x + 1);
+    }, 1700);
+    return () => window.clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pool.join()]);
+  const t = pool[i % pool.length];
+  const ident = db.meta.types[t]?.[1] ?? 'normal';
+  const color = `var(--c-${ident})`;
+  return (
+    <svg className="tball" viewBox="0 0 40 40" aria-hidden>
+      <path className="tball__top" d="M0 20a20 20 0 0 1 40 0Z" style={{ fill: color }} />
+      <path d="M0 20a20 20 0 0 0 40 0Z" fill="#f6f5f2" />
+      <rect x="0" y="18.4" width="40" height="3.2" fill="#0e1317" />
+      <circle cx="20" cy="20" r="9.4" fill="#f6f5f2" stroke="#0e1317" strokeWidth="2.6" />
+      <g key={`${t}-${i}`} className="tball__glyph" style={{ color, '--glyph-cut': '#f6f5f2' } as CSSProperties}>
+        <svg x="13.25" y="13.25" width="13.5" height="13.5" viewBox="0 0 24 24">{glyphPaths(ident)}</svg>
+      </g>
+    </svg>
+  );
+}
+
+function TypeGrid({ db, types, onToggle }: { db: Db; types: number[]; onToggle: (t: number) => void }) {
+  return (
+    <div className="typegrid">
+      {Object.entries(db.meta.types).map(([id, [name, ident]]) => (
+        <button key={id} className={`tchip t-${ident}${types.includes(+id) ? ' is-on' : ''}`} aria-pressed={types.includes(+id)} onClick={() => onToggle(+id)}>
+          <svg className="tchip__glyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden style={{ '--glyph-cut': `var(--c-${ident})` } as CSSProperties}>{glyphPaths(ident)}</svg>
+          {name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RegionGrid({ gen, onPick, plain }: { gen: number; onPick: (g: number) => void; plain?: boolean }) {
+  return (
+    <div className="regiongrid">
+      {GENS.map((g, i) => (
+        <button key={g} className={`rchip rchip--g${i + 1}${plain ? ' rchip--plain' : ''}${gen === i + 1 ? ' is-on' : ''}`} aria-pressed={gen === i + 1} onClick={() => onPick(i + 1)}>
+          <span className="rchip__num">{g}</span>
+          <span className="rchip__name">{REGIONS[i]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ClearButton({ tabbable, onClear }: { tabbable: boolean; onClear: () => void }) {
+  return (
+    <button type="button" className="sbar__clear" tabIndex={tabbable ? 0 : -1} onPointerDown={(e) => e.preventDefault()} onClick={onClear} aria-label="Borrar búsqueda">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" /></svg>
+    </button>
+  );
+}
+
+function StarIcon({ filled, size = 24, className }: { filled?: boolean; size?: number; className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+      <path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -409,13 +592,13 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
-function PadButton({ label, color, on, open, face, onClick, children, ref, extraClass = '' }: {
-  label: string; color: 'blue' | 'yellow' | 'green' | 'white' | 'orange'; on: boolean; open?: boolean; face?: CSSProperties;
+function PadButton({ label, color, on, open, onClick, children, ref, extraClass = '' }: {
+  label: string; color: 'yellow' | 'white' | 'orange' | 'ball'; on: boolean; open?: boolean;
   onClick: () => void; children: ReactNode; ref?: Ref<HTMLButtonElement>; extraClass?: string;
 }) {
   return (
     <button ref={ref} type="button" className={`pad pad--${color} ${extraClass}${on ? ' is-on' : ''}`} aria-expanded={open} onClick={onClick}>
-      <span className="pad__cap" style={face}>{children}</span>
+      <span className="pad__cap">{children}</span>
       <span className="pad__label">{label}</span>
     </button>
   );

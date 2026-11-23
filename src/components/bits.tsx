@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Db } from '../types';
+import { ClassGlyph } from './glyphs';
 
 const SHEET = 960; // ancho de cada hoja de sprites (10 x 96 px)
 
@@ -36,9 +37,14 @@ export function TypeBadge({ db, id, small, style }: { db: Db; id: number; small?
 }
 
 const CLASS = { 1: ['Estado', 'cls-status'], 2: ['Físico', 'cls-phys'], 3: ['Especial', 'cls-spec'] } as const;
-export function MoveClass({ c }: { c: number }) {
+/** Categoría del movimiento como símbolo (el nombre queda como etiqueta accesible) */
+export function MoveClass({ c, big }: { c: number; big?: boolean }) {
   const v = CLASS[c as 1 | 2 | 3];
-  return v ? <span className={`cls ${v[1]}`}>{v[0]}</span> : null;
+  return v ? (
+    <span className={`cls ${v[1]}${big ? ' cls--big' : ''}`} role="img" aria-label={v[0]} title={v[0]}>
+      <ClassGlyph c={c} size={big ? 18 : 14} />
+    </span>
+  ) : null;
 }
 
 export function Ball({ className, size = 24 }: { className?: string; size?: number }) {

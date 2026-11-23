@@ -3,16 +3,10 @@ import type { Db, MoveInfo } from '../types';
 import { loadMoveExtra } from '../data';
 import { nav } from '../nav';
 import { BackButton, GENS, MiniMon, MoveClass, Spinner, TypeBadge } from './bits';
+import { TypeGlyph } from './glyphs';
 
 const METHODS: [number, string, string][] = [[0, 'Todos', ''], [1, 'Nivel', 'Nv'], [8, 'MT', 'MT'], [2, 'Huevo', 'Huevo'], [4, 'Tutor', 'Tutor']];
 const methodTag = (mask: number) => METHODS.filter(([m]) => m && mask & m).map(([, , t]) => t).join(' · ');
-
-/** Dibujo del emblema según la clase de movimiento */
-export function ClassIcon({ c }: { c: number }) {
-  if (c === 2) return <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden><path d="M24 4l4.6 11.2L40 10l-5.2 11.4L46 26l-11.4 4.6L40 42l-11.4-5.2L24 48l-4.6-11.2L8 42l5.2-11.4L2 26l11.2-4.6L8 10l11.4 5.2Z" fill="currentColor" /></svg>;
-  if (c === 3) return <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden><circle cx="24" cy="24" r="6" fill="currentColor" /><circle cx="24" cy="24" r="13" fill="none" stroke="currentColor" strokeWidth="4" /><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" strokeWidth="3" opacity=".6" /></svg>;
-  return <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden><path d="M24 6a18 18 0 1 0 0 36Z" fill="currentColor" /><circle cx="24" cy="24" r="16" fill="none" stroke="currentColor" strokeWidth="4" /></svg>;
-}
 
 export default function MovePage({ db, id }: { db: Db; id: number }) {
   const m = db.moves[id];
@@ -41,11 +35,11 @@ export default function MovePage({ db, id }: { db: Db; id: number }) {
       </header>
       <section className="hero">
         <div className="screen">
-          <div className="emblem"><span className="emblem__icon"><ClassIcon c={m[2]} /></span></div>
+          <div className="emblem"><span className="emblem__icon"><TypeGlyph ident={typeId} size={50} /></span></div>
           <div className="hero__info">
             <span className="hero__num">Movimiento{info ? ` · Gen. ${GENS[info[1] - 1]}` : ''}</span>
             <h2 className="hero__name">{m[0]}</h2>
-            <div className="hero__types"><TypeBadge db={db} id={m[1]} style={{ '--i': 0 } as CSSProperties} /><MoveClass c={m[2]} /></div>
+            <div className="hero__types"><TypeBadge db={db} id={m[1]} style={{ '--i': 0 } as CSSProperties} /><MoveClass c={m[2]} big /></div>
           </div>
         </div>
       </section>

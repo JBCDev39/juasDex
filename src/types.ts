@@ -28,6 +28,8 @@ export interface TeamMember {
   pid: number;
   species: number;
   types: number[];
+  /** tipos originales (para volver a ellos al apagar el Modo Randomizer) */
+  origTypes?: number[];
   abil: number;
   nature: number;
   item: number;
@@ -39,6 +41,8 @@ export interface Team {
   name: string;
   vg: number;
   members: (TeamMember | null)[];
+  /** Modo Randomizer: cualquier Pokémon, tipo, habilidad y movimiento */
+  randomizer?: boolean;
 }
 
 export interface Variety {

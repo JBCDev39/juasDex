@@ -183,7 +183,9 @@ export function Picker({ title, value, options, onChange, layout = 'list', tone 
     const away = (e: Event) => {
       if (!narrow && !panel.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) hide(false);
     };
-    const onResize = () => hide(false);
+    // Solo cerrar si cambia el ancho (girar el teléfono). Cuando sale el teclado cambia solo el alto: no cerrar.
+    const w0 = window.innerWidth;
+    const onResize = () => { if (Math.abs(window.innerWidth - w0) > 40) hide(false); };
     document.addEventListener('keydown', key);
     document.addEventListener('pointerdown', away);
     window.addEventListener('resize', onResize);

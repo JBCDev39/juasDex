@@ -3,6 +3,7 @@ import type { Db, Team, TeamMember, Variety } from '../types';
 import { defense, loadSpecies, loadVgDex, pidInfo, teams } from '../data';
 import { nav } from '../nav';
 import { BackButton, GENS, ItemIcon, MiniMon, MoveClass, Picker, STAT_SHORT, Spinner, Sprite, TypeBadge, type Opt } from './bits';
+import { glyphPaths } from './glyphs';
 
 const fold = (x: string) => x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const gameName = (db: Db, vg: number) => db.meta.versionGroups.find((g) => g.id === vg)?.name ?? '';
@@ -51,7 +52,7 @@ export function TeamsPage({ db }: { db: Db }) {
             <button key={t.id} className="team-card" onClick={() => nav.push(`equipo-${t.id}`)}>
               <span className="team-card__top">
                 <strong>{t.name}</strong>
-                <span className="team-card__game">{gameName(db, t.vg)}</span>
+                <span className="team-card__game">{t.randomizer ? <span className="rando-tag">Randomizer</span> : null}{gameName(db, t.vg)}</span>
               </span>
               <span className="team-card__mons">
                 {t.members.map((m, i) => (
@@ -96,18 +97,19 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
   const games = db.meta.versionGroups.filter((g) => (vgDex ? vgDex[g.id]?.length : true));
   const gameOpts: Opt[] = [...games].reverse().map((g) => ({ value: g.id, label: g.name, group: `Generación ${GENS[g.gen - 1]}` }));
 
+  const fullPool = [...db.index.map(([sid]) => sid), ...Object.keys(db.forms).map(Number)].sort((a, b) => (db.forms[a]?.[0] ?? a) - (db.forms[b]?.[0] ?? b) || a - b);
   if (view.kind === 'pick') {
     return (
       <PickMon
         db={db}
         team={team}
-        pool={vgDex?.[team.vg] ?? null}
+        pool={team.randomizer ? fullPool : vgDex?.[team.vg] ?? null}
         onCancel={() => setView({ kind: 'team' })}
         onPick={async (pid) => {
           const species = db.forms[pid]?.[0] ?? pid;
           const sp = await loadSpecies(species, db.meta.chunk);
           const v = sp.varieties.find((x) => x.pid === pid) ?? sp.varieties[0];
-          setMember(view.slot, { pid, species, types: v.types, abil: v.abil[0]?.[0] ?? 0, nature: 0, item: 0, moves: [] });
+          setMember(view.slot, { pid, species, types: v.types, origTypes: v.types, abil: v.abil[0]?.[0] ?? 0, nature: 0, item: 0, moves: [] });
           setView({ kind: 'edit', slot: view.slot });
         }}
       />
@@ -156,6 +158,24 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
             <span>Juego (decide qué movimientos se pueden elegir)</span>
             <Picker title="Elija un juego" value={team.vg} options={gameOpts} onChange={(vg) => setTeam({ ...team, vg })} />
           </div>
+
+          <button
+            className={`rando${team.randomizer ? ' is-on' : ''}`}
+            role="switch"
+            aria-checked={Boolean(team.randomizer)}
+            onClick={() => {
+              const on = !team.randomizer;
+              // Al apagarlo, cada Pokémon vuelve a sus tipos originales
+              const members = on ? team.members : team.members.map((m) => (m ? { ...m, types: m.origTypes ?? m.types } : m));
+              setTeam({ ...team, randomizer: on, members });
+            }}
+          >
+            <span className="rando__text">
+              <strong>Modo Randomizer</strong>
+              <small>{team.randomizer ? 'Cualquier Pokémon, tipo, habilidad y movimiento, sin importar el juego.' : 'Para partidas randomizer: deja cambiar tipos, habilidades y movimientos libremente.'}</small>
+            </span>
+            <span className="rando__switch" aria-hidden><i /></span>
+          </button>
 
           <div className="slots">
             {team.members.map((m, i) => m ? (
@@ -244,7 +264,7 @@ function PickMon({ db, team, pool, onPick, onCancel }: { db: Db; team: Team; poo
         <div className="stack-gap">
           <div className="pick-head">
             <h3>Elija un Pokémon</h3>
-            <span className="muted small">Disponibles en {gameName(db, team.vg)}</span>
+            <span className="muted small">{team.randomizer ? 'Modo Randomizer: todos los Pokémon y formas' : `Disponibles en ${gameName(db, team.vg)}`}</span>
           </div>
           <input className="text-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre o número" aria-label="Buscar Pokémon" autoFocus />
           {!pool && <div className="empty"><Spinner /> Cargando…</div>}
@@ -275,12 +295,26 @@ function EditMember({ db, team, member, onChange, onRemove, onSwap, onDone }: {
   }, [db, member.pid, member.species]);
 
   const info = pidInfo(db, member.pid);
+  const rando = Boolean(team.randomizer);
   const learnable = useMemo(() => {
+    if (rando) return Object.keys(db.moves).map(Number).sort((a, b) => db.moves[a][0].localeCompare(db.moves[b][0], 'es'));
     if (!v) return [] as number[];
     const ids = new Set((v.moves[team.vg] ?? []).map((x) => x[0]));
     return [...ids].filter((mid) => db.moves[mid]).sort((a, b) => db.moves[a][0].localeCompare(db.moves[b][0], 'es'));
-  }, [v, team.vg, db]);
+  }, [v, team.vg, db, rando]);
   const learnSet = new Set(learnable);
+  const ownAbil = new Set(v?.abil.map(([a]) => a) ?? []);
+  const abilOpts: Opt[] = [
+    ...(v?.abil ?? []).map(([aid, hidden]) => ({ value: aid, label: db.abilities[aid]?.[0] ?? '¿?', hint: hidden ? 'Oculta' : undefined, group: 'De este Pokémon' })),
+    ...Object.entries(db.abilities).filter(([aid, a]) => !ownAbil.has(+aid) && a[2] > 0).sort((a, b) => a[1][0].localeCompare(b[1][0], 'es'))
+      .map(([aid, a]) => ({ value: +aid, label: a[0], group: 'Todas las habilidades' })),
+  ];
+  const toggleType = (t: number) => {
+    const has = member.types.includes(t);
+    if (has && member.types.length === 1) return; // siempre al menos un tipo
+    const next = has ? member.types.filter((x) => x !== t) : [...member.types, t].slice(-2);
+    onChange({ ...member, origTypes: member.origTypes ?? member.types, types: next });
+  };
 
   const natureOpts: Opt[] = [
     { value: 0, label: 'Sin naturaleza' },
@@ -331,6 +365,7 @@ function EditMember({ db, team, member, onChange, onRemove, onSwap, onDone }: {
             <h2 className="hero__name">{info.name}</h2>
             {info.form && <span className="hero__form">{info.form}</span>}
             <div className="hero__types">{member.types.map((t, i) => <TypeBadge key={t} db={db} id={t} style={{ '--i': i } as CSSProperties} />)}</div>
+            {rando && <span className="rando-tag rando-tag--hero">Modo Randomizer</span>}
             <div className="member-actions">
               <button className="chip" onClick={onSwap}>Cambiar</button>
               <button className="chip" onClick={onRemove}>Quitar</button>
@@ -342,16 +377,41 @@ function EditMember({ db, team, member, onChange, onRemove, onSwap, onDone }: {
       <main className="body">
         {!v ? <div className="empty"><Spinner /> Cargando…</div> : (
           <div className="stack-gap">
+            {rando && (
+              <section className="panel">
+                <div className="panel__head">
+                  <h3>Tipos</h3>
+                  {member.origTypes && member.origTypes.join() !== member.types.join() && (
+                    <button className="lf__link" onClick={() => onChange({ ...member, types: member.origTypes! })}>Volver a los originales</button>
+                  )}
+                </div>
+                <div className="typegrid typegrid--plain">
+                  {Object.entries(db.meta.types).map(([tid, [name, ident]]) => (
+                    <button key={tid} className={`tchip t-${ident}${member.types.includes(+tid) ? ' is-on' : ''}`} aria-pressed={member.types.includes(+tid)} onClick={() => toggleType(+tid)}>
+                      <svg className="tchip__glyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden style={{ '--glyph-cut': `var(--c-${ident})` } as CSSProperties}>{glyphPaths(ident)}</svg>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <p className="note">Hasta 2 tipos. Las debilidades del equipo usan estos tipos.</p>
+              </section>
+            )}
+
             <section className="panel">
               <h3>Habilidad</h3>
-              <div className="abil-pick">
-                {v.abil.map(([aid, hidden]) => (
-                  <button key={aid} className={`abil-chip${member.abil === aid ? ' is-on' : ''}`} aria-pressed={member.abil === aid} onClick={() => onChange({ ...member, abil: aid })}>
-                    <strong>{db.abilities[aid]?.[0]}</strong>
-                    {hidden ? <span className="hidden-tag">Oculta</span> : null}
-                  </button>
-                ))}
-              </div>
+              {rando ? (
+                <Picker title="Habilidad" value={member.abil} options={abilOpts} searchable onChange={(a) => onChange({ ...member, abil: a })} />
+              ) : (
+                <div className="abil-pick">
+                  {v.abil.map(([aid, hidden]) => (
+                    <button key={aid} className={`abil-chip${member.abil === aid ? ' is-on' : ''}`} aria-pressed={member.abil === aid} onClick={() => onChange({ ...member, abil: aid })}>
+                      <strong>{db.abilities[aid]?.[0]}</strong>
+                      {hidden ? <span className="hidden-tag">Oculta</span> : null}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!rando && member.abil && !ownAbil.has(member.abil) && <p className="move-slot__warn">{db.abilities[member.abil]?.[0]} no es una habilidad normal de este Pokémon.</p>}
               {db.abilities[member.abil]?.[1] && <p className="muted small abil-desc">{db.abilities[member.abil][1]}</p>}
             </section>
 
@@ -390,7 +450,7 @@ function EditMember({ db, team, member, onChange, onRemove, onSwap, onDone }: {
             </section>
 
             <section className="panel">
-              <div className="panel__head"><h3>Movimientos</h3><span className="muted small">{learnable.length} disponibles en {gameName(db, team.vg)}</span></div>
+              <div className="panel__head"><h3>Movimientos</h3><span className="muted small">{rando ? `Todos (${learnable.length})` : `${learnable.length} disponibles en ${gameName(db, team.vg)}`}</span></div>
               {learnable.length === 0 && <p className="muted">Este Pokémon no tiene movimientos registrados en este juego.</p>}
               <div className="move-slots">
                 {[0, 1, 2, 3].map((k) => {

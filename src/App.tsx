@@ -12,7 +12,7 @@ const valid = (db: Db, r: Route): Route => {
   if (r.kind === 'mov') return db.moves[r.id] ? r : null;
   if (r.kind === 'hab') return db.abilities[r.id] ? r : null;
   if (r.kind === 'obj') return db.items[r.id] ? r : null;
-  return r; // equipos / equipo
+  return r; // equipos / equipo / importar
 
 };
 

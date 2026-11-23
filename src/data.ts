@@ -102,6 +102,13 @@ export const teams = {
     store.set('teams', l);
   },
   remove(id: number) { store.set('teams', teams.list().filter((t) => t.id !== id)); },
+  /** Guarda un equipo nuevo (por ejemplo, importado) y devuelve su id */
+  add(t: Omit<Team, 'id'>): Team {
+    const l = teams.list();
+    const team: Team = { ...t, id: l.reduce((m, x) => Math.max(m, x.id), 0) + 1 };
+    teams.save(team);
+    return team;
+  },
   create(): Team {
     const l = teams.list();
     const id = l.reduce((m, t) => Math.max(m, t.id), 0) + 1;

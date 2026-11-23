@@ -418,6 +418,38 @@ for (const [pid, byVg] of learn) {
 for (const l of Object.values(vgDex)) l.sort((a, b) => a - b);
 fs.writeFileSync(path.join(OUT, 'vg-dex.json'), JSON.stringify(vgDex));
 
+// ---------- Nombres en inglés (para compartir en formato Showdown) ----------
+{
+  const enOnly = (rows, idKey, nameKey = 'name') => {
+    const m = {};
+    for (const r of rows) if (+r.local_language_id === EN) m[r[idKey]] = r[nameKey];
+    return m;
+  };
+  const enSpecies = enOnly(speciesNameRows, 'pokemon_species_id');
+  const enMoves = enOnly(read('move_names'), 'move_id');
+  const enAbil = enOnly(read('ability_names'), 'ability_id');
+  const enItems = enOnly(read('item_names'), 'item_id');
+  const enNat = enOnly(read('nature_names'), 'nature_id');
+  const titled = (id) => id.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('-');
+  const pokemonEn = {};
+  for (const pid of keepPid) {
+    const p = pokemonRows.find((x) => x.id === pid);
+    if (!p) continue;
+    const base = enSpecies[p.species_id] || pretty(speciesById[p.species_id].identifier);
+    if (p.is_default === '1') { pokemonEn[pid] = base; continue; }
+    const suffix = p.identifier.startsWith(speciesById[p.species_id].identifier + '-') ? p.identifier.slice(speciesById[p.species_id].identifier.length + 1) : p.identifier;
+    pokemonEn[pid] = `${base}-${titled(suffix)}`;
+  }
+  const pick = (m, keep) => Object.fromEntries(Object.entries(m).filter(([k]) => keep[k]));
+  fs.writeFileSync(path.join(OUT, 'en.json'), JSON.stringify({
+    pokemon: pokemonEn,
+    moves: pick(enMoves, learners),
+    abilities: pick(enAbil, abilities),
+    items: pick(enItems, itemsOut),
+    natures: enNat,
+  }));
+}
+
 for (const [cid, data] of Object.entries(chunks)) {
   fs.writeFileSync(path.join(OUT, 'p', `${cid}.json`), JSON.stringify(data));
 }

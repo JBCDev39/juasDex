@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { Db, Team, TeamMember, Variety } from '../types';
-import { defense, loadSpecies, loadVgDex, pidInfo, teams } from '../data';
+import { defense, loadSpecies, loadVgDex, pidInfo, store, teams } from '../data';
 import { nav } from '../nav';
 import { BackButton, GENS, ItemIcon, MiniMon, MoveClass, Picker, STAT_SHORT, Spinner, Sprite, TypeBadge, type Opt } from './bits';
 import { glyphPaths } from './glyphs';
+import { copyText, decodeTeam, fromShowdown, loadEn, teamLink, toShowdown } from '../share';
 
 const fold = (x: string) => x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const gameName = (db: Db, vg: number) => db.meta.versionGroups.find((g) => g.id === vg)?.name ?? '';
@@ -26,6 +27,24 @@ function BallsIcon({ size = 46 }: { size?: number }) {
 export function TeamsPage({ db }: { db: Db }) {
   const list = teams.list();
   const create = () => { const t = teams.create(); nav.push(`equipo-${t.id}`); };
+  const [importing, setImporting] = useState(false);
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const doImport = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const fromLink = /importar-[A-Za-z0-9_-]+/.test(text) ? await decodeTeam(db, text) : null;
+      if (fromLink) { const t = teams.add(fromLink); nav.push(`equipo-${t.id}`); return; }
+      const res = await fromShowdown(db, await loadEn(), text);
+      if (!res) { setMsg('No se reconoció ningún Pokémon. Pegue el texto de Showdown o un enlace de JuasDex.'); return; }
+      const t = teams.add(res.team);
+      if (res.missing.length) store.set('importNote', `No se reconoció: ${res.missing.slice(0, 6).join(', ')}${res.missing.length > 6 ? '…' : ''}`);
+      nav.push(`equipo-${t.id}`);
+    } catch {
+      setMsg('Diay, algo falló al leerlo. ¿Tiene conexión?');
+    } finally { setBusy(false); }
+  };
   return (
     <div className="detail teamspage">
       <header className="dex-top dex-top--detail">
@@ -43,10 +62,28 @@ export function TeamsPage({ db }: { db: Db }) {
       </section>
       <main className="body">
         <div className="stack-gap">
-          <button className="big-btn" onClick={create}>
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" /></svg>
-            Nuevo equipo
-          </button>
+          <div className="btn-row">
+            <button className="big-btn" onClick={create}>
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" /></svg>
+              Nuevo equipo
+            </button>
+            <button className={`big-btn big-btn--alt${importing ? ' is-on' : ''}`} onClick={() => setImporting((x) => !x)}>
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M12 4v11m-5-5 5 5 5-5M5 20h14" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              Importar
+            </button>
+          </div>
+          {importing && (
+            <section className="panel import">
+              <h3>Importar un equipo</h3>
+              <p className="muted small">Pegue un enlace de JuasDex o el texto de un equipo de Pokémon Showdown.</p>
+              <textarea className="text-area" value={text} onChange={(e) => setText(e.target.value)} rows={7} placeholder={'Venusaur @ Choice Specs\nAbility: Chlorophyll\nModest Nature\n- Sludge Bomb\n- Giga Drain'} />
+              {msg && <p className="move-slot__warn">{msg}</p>}
+              <div className="lf__foot">
+                <button className="lf__link" onClick={() => { setImporting(false); setText(''); setMsg(''); }}>Cancelar</button>
+                <button className="lf__done" disabled={!text.trim() || busy} onClick={doImport}>{busy ? 'Leyendo…' : 'Importar'}</button>
+              </div>
+            </section>
+          )}
           {list.length === 0 && <div className="empty">Todavía no tiene equipos. ¡Arme el primero!</div>}
           {list.map((t) => (
             <button key={t.id} className="team-card" onClick={() => nav.push(`equipo-${t.id}`)}>
@@ -75,8 +112,16 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
   const [vgDex, setVgDex] = useState<Record<string, number[]> | null>(null);
   const [view, setView] = useState<View>({ kind: 'team' });
   const [confirmDel, setConfirmDel] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareMsg, setShareMsg] = useState('');
+  const [sdText, setSdText] = useState('');
+  const [note] = useState(() => { const n = store.get('importNote', ''); store.set('importNote', ''); return n; });
 
   useEffect(() => { loadVgDex().then(setVgDex).catch(() => undefined); }, []);
+  useEffect(() => {
+    if (!sharing || !team) return;
+    loadEn().then((e) => setSdText(toShowdown(db, e, team))).catch(() => setSdText(''));
+  }, [sharing, team, db]);
   useEffect(() => { document.querySelector('.sheet')?.scrollTo({ top: 0 }); }, [view]);
 
   if (!team) {
@@ -189,6 +234,39 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
               </button>
             ))}
           </div>
+
+          {note && <p className="move-slot__warn">{note}. Puede elegirlos a mano.</p>}
+
+          {members.length > 0 && (
+            <button className={`share-btn${sharing ? ' is-on' : ''}`} onClick={() => { setSharing((x) => !x); setShareMsg(''); }}>
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden><circle cx="18" cy="5" r="2.6" fill="currentColor" /><circle cx="6" cy="12" r="2.6" fill="currentColor" /><circle cx="18" cy="19" r="2.6" fill="currentColor" /><path d="M8.3 10.8l7.4-4.3M8.3 13.2l7.4 4.3" stroke="currentColor" strokeWidth="2" /></svg>
+              Compartir equipo
+            </button>
+          )}
+          {sharing && (
+            <section className="panel share">
+              <div className="share__opts">
+                <button className="share__opt" onClick={async () => {
+                  const url = teamLink(team);
+                  const nav2 = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
+                  if (nav2.share) {
+                    try { await nav2.share({ title: `JuasDex · ${team.name}`, text: `Mi equipo "${team.name}" en JuasDex:`, url }); setShareMsg(''); return; } catch { /* cancelado o no disponible */ }
+                  }
+                  setShareMsg((await copyText(url)) ? 'Enlace copiado. Péguelo en WhatsApp o donde quiera.' : 'No se pudo copiar el enlace.');
+                }}>
+                  <strong>Enviar enlace</strong>
+                  <small>Para otra persona con JuasDex: lo abre y lo guarda con un toque.</small>
+                </button>
+                <button className="share__opt" disabled={!sdText} onClick={async () => setShareMsg((await copyText(sdText)) ? 'Texto copiado en formato Showdown.' : 'No se pudo copiar. Puede seleccionarlo abajo.')}>
+                  <strong>Copiar para Showdown</strong>
+                  <small>Texto en inglés que entienden Pokémon Showdown y otras herramientas.</small>
+                </button>
+              </div>
+              {shareMsg && <p className="share__msg">{shareMsg}</p>}
+              {sdText && <textarea className="text-area text-area--mono" readOnly value={sdText} rows={Math.min(14, sdText.split('\n').length + 1)} onFocus={(e) => e.currentTarget.select()} />}
+              {team.randomizer && <p className="note">Los tipos del Modo Randomizer viajan en el enlace, pero no en el texto de Showdown.</p>}
+            </section>
+          )}
 
           {members.length > 0 && <TeamDefense db={db} members={members} />}
           {members.length > 0 && <TeamCoverage db={db} members={members} />}
@@ -551,5 +629,55 @@ function TeamCoverage({ db, members }: { db: Db; members: TeamMember[] }) {
         </>
       )}
     </section>
+  );
+}
+
+/* ---------- Abrir un enlace compartido ---------- */
+export function ImportPage({ db, code }: { db: Db; code: string }) {
+  const [team, setTeam] = useState<Omit<Team, 'id'> | null | 'error'>(null);
+  useEffect(() => {
+    let alive = true;
+    decodeTeam(db, code).then((t) => alive && setTeam(t ?? 'error')).catch(() => alive && setTeam('error'));
+    return () => { alive = false; };
+  }, [db, code]);
+  const save = () => {
+    if (!team || team === 'error') return;
+    const t = teams.add(team);
+    nav.replace(`equipo-${t.id}`);
+  };
+  return (
+    <div className="detail teamspage">
+      <header className="dex-top dex-top--detail">
+        <div className="dex-top__inner nav-row"><BackButton onClick={() => nav.back()} /></div>
+      </header>
+      <section className="hero">
+        <div className="screen">
+          <div className="emblem emblem--teams"><span className="emblem__icon"><BallsIcon size={56} /></span></div>
+          <div className="hero__info">
+            <span className="hero__num">Le compartieron un equipo</span>
+            <h2 className="hero__name">{team && team !== 'error' ? team.name : 'Equipo'}</h2>
+            {team && team !== 'error' && <span className="hero__genus">{gameName(db, team.vg)}{team.randomizer ? ' · Randomizer' : ''}</span>}
+          </div>
+        </div>
+      </section>
+      <main className="body">
+        <div className="stack-gap">
+          {team === null && <div className="empty"><Spinner /> Abriendo el equipo…</div>}
+          {team === 'error' && <div className="empty">Diay, este enlace no se pudo leer. Pídale a quien se lo mandó que lo vuelva a copiar.</div>}
+          {team && team !== 'error' && (
+            <>
+              <div className="slots">
+                {team.members.filter(Boolean).map((m, i) => (
+                  <div key={i} className="slot" style={{ '--i': i, ...slotColors(db, (m as TeamMember).types) } as CSSProperties}>
+                    <MemberCard db={db} m={m as TeamMember} />
+                  </div>
+                ))}
+              </div>
+              <button className="big-btn" onClick={save}>Guardar en mis equipos</button>
+            </>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }

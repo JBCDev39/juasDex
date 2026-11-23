@@ -179,7 +179,7 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
 
           <div className="slots">
             {team.members.map((m, i) => m ? (
-              <button key={i} className={`slot t-${db.meta.types[m.types[0]]?.[1]}`} style={{ '--i': i } as CSSProperties} onClick={() => setView({ kind: 'edit', slot: i })}>
+              <button key={i} className="slot" style={{ '--i': i, ...slotColors(db, m.types) } as CSSProperties} onClick={() => setView({ kind: 'edit', slot: i })}>
                 <MemberCard db={db} m={m} />
               </button>
             ) : (
@@ -210,18 +210,29 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
   );
 }
 
+/** Colores de la tarjeta: los dos tipos en diagonal (si tiene uno solo, el mismo color más oscuro) */
+const slotColors = (db: Db, types: number[]) => {
+  const a = db.meta.types[types[0]]?.[1] ?? 'normal';
+  const b = types[1] ? db.meta.types[types[1]]?.[1] : null;
+  return { '--t1': `var(--c-${a})`, '--t2': b ? `var(--c-${b})` : `color-mix(in srgb, var(--c-${a}) 68%, #000)` } as CSSProperties;
+};
+
 function MemberCard({ db, m }: { db: Db; m: TeamMember }) {
   const info = pidInfo(db, m.pid);
   const item = m.item ? db.items[m.item] : null;
   const nature = m.nature ? db.natures[m.nature] : null;
+  const g1 = db.meta.types[m.types[0]]?.[1] ?? 'normal';
+  const g2 = m.types[1] ? db.meta.types[m.types[1]]?.[1] ?? g1 : g1;
   return (
     <>
+      <svg className="slot__mark slot__mark--1" viewBox="0 0 24 24" aria-hidden style={{ '--glyph-cut': 'transparent' } as CSSProperties}>{glyphPaths(g1)}</svg>
+      <svg className="slot__mark slot__mark--2" viewBox="0 0 24 24" aria-hidden style={{ '--glyph-cut': 'transparent' } as CSSProperties}>{glyphPaths(g2)}</svg>
       <span className="slot__head">
-        <Sprite db={db} pid={m.pid} size={64} fallback={m.species} />
+        <span className="slot__mon"><Sprite db={db} pid={m.pid} size={64} fallback={m.species} /></span>
         <span className="slot__id">
           <strong>{info.name}</strong>
           {info.form && <small>{info.form}</small>}
-          <span className="slot__types">{m.types.map((t) => <TypeBadge key={t} db={db} id={t} small />)}</span>
+          <span className="slot__types">{m.types.map((t) => <span key={t} className="slot__type">{db.meta.types[t]?.[0]}</span>)}</span>
         </span>
         {item && <span className="slot__item" title={item[0]}><ItemIcon db={db} ident={item[4]} size={30} /></span>}
       </span>

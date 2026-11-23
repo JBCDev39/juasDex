@@ -45,7 +45,6 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const [edge, setEdge] = useState({ l: 0, r: 0 });
   const tabsRef = useRef<HTMLDivElement>(null);
   const [tabPill, setTabPill] = useState<{ left: number; width: number }>({ left: 3, width: 0 });
-  const recent = store.get<number[]>('recent', []).filter((id) => id >= 1 && id <= db.index.length);
   const favList = favs.list();
   const favSet = new Set(favList);
   const active = Boolean(q.trim() || types.length || gen || favOnly);
@@ -319,38 +318,21 @@ export default function List({ db }: { db: Db; stamp?: number }) {
 
           <div className={`recent-wrap${active || panel ? ' is-hidden' : ''}`}>
             <div className="recent-wrap__clip">
-              <div className="explore">
+              <div className="keypad">
                 {([
                   ['mov', 'Movimientos', <svg key="i" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M13 2 5 13h6l-1 9 8-11h-6Z" fill="currentColor" /></svg>],
                   ['hab', 'Habilidades', <svg key="i" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M12 3l2.3 5.6 6 .5-4.6 3.9 1.4 5.9L12 15.8 6.9 18.9l1.4-5.9L3.7 9.1l6-.5Z" fill="currentColor" /></svg>],
                   ['obj', 'Objetos', <svg key="i" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7h2.5A1.5 1.5 0 0 1 20 8.5v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-10A1.5 1.5 0 0 1 5.5 7Zm2 0h4V5.5a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5Z" fill="currentColor" /></svg>],
                   ['nat', 'Naturalezas', <svg key="i" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M7 4l4 5H8v7H6V9H3Zm10 16-4-5h3V8h2v7h3Z" fill="currentColor" /></svg>],
                 ] as [Tab, string, ReactNode][]).map(([t, label, icon]) => (
-                  <button key={t} className="explore__chip" tabIndex={active || panel ? -1 : 0} onClick={() => { setTab(t); anchorList.current = false; window.setTimeout(toList, 30); }}>
-                    {icon}{label}
+                  <button key={t} className="key" tabIndex={active || panel ? -1 : 0} onClick={() => { setTab(t); anchorList.current = false; window.setTimeout(toList, 30); }}>
+                    <span className="key__icon">{icon}</span>{label}
                   </button>
                 ))}
               </div>
             </div>
           </div>
 
-          {recent.length > 0 && (
-            <div className={`recent-wrap${active || panel ? ' is-hidden' : ''}`}>
-              <div className="recent-wrap__clip">
-                <div className="recent">
-                  <span className="recent__label">Recientes</span>
-                  <div className="recent__row">
-                    {recent.map((id) => (
-                      <button key={id} className="recent__chip" data-card={active ? undefined : id} tabIndex={active || panel ? -1 : 0} onClick={(e) => open(id, e.currentTarget)}>
-                        <Sprite db={db} pid={id} size={32} />
-                        {db.index[id - 1][1]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
         {!active && (
           <button className="scroll-hint" onClick={toList}>

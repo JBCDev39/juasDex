@@ -87,6 +87,15 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     return () => { window.removeEventListener('resize', measure); row?.removeEventListener('transitionend', measure); };
   });
 
+  // Si la búsqueda de la lista está abierta y se vuelve al inicio, se cierra sola
+  useEffect(() => {
+    if (past) return;
+    anchorList.current = false;
+    if (listSearch) listInput.current?.blur();
+    if (listFilters) setListFilters(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [past]);
+
   // "/" abre la búsqueda en computadora
   useEffect(() => {
     const k = (e: KeyboardEvent) => {

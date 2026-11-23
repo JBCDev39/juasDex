@@ -359,6 +359,65 @@ fs.writeFileSync(path.join(OUT, 'move-learners.json'), JSON.stringify(learners))
 fs.writeFileSync(path.join(OUT, 'ability-holders.json'), JSON.stringify(holders));
 fs.writeFileSync(path.join(OUT, 'forms.json'), JSON.stringify(formsOut));
 
+// ---------- Objetos útiles ----------
+const ITEM_CAT = {
+  10: 'Evolución', 12: 'Equipable', 13: 'Elección', 14: 'Esfuerzo', 15: 'Equipable perjudicial', 16: 'Entrenamiento',
+  17: 'Tabla', 18: 'Exclusivo', 19: 'Potenciador de tipo', 42: 'Gema', 44: 'Megapiedra', 45: 'Disco',
+  2: 'Baya de esfuerzo', 3: 'Baya curativa', 4: 'Baya', 5: 'Baya de apuro', 6: 'Baya curativa', 7: 'Baya protectora',
+  33: 'Poké Ball especial', 34: 'Poké Ball', 39: 'Bonguri Ball',
+  26: 'Vitamina', 27: 'Curación', 28: 'Recupera PP', 29: 'Revivir', 30: 'Cura estados', 50: 'Menta',
+};
+const ITEM_GROUP = (c) => ([10].includes(c) ? 'evo' : [2, 3, 4, 5, 6, 7].includes(c) ? 'baya' : [33, 34, 39].includes(c) ? 'ball' : [26, 27, 28, 29, 30, 50].includes(c) ? 'med' : 'equip');
+const itemText = {};
+for (const r of read('item_flavor_text')) {
+  if (+r.language_id !== ES) continue;
+  const prev = itemText[r.item_id];
+  if (!prev || +r.version_group_id > prev.vg) itemText[r.item_id] = { vg: +r.version_group_id, t: clean(r.flavor_text) };
+}
+const evoByItem = {};
+for (const [sid, rows] of evoRows) {
+  for (const r of rows) {
+    if (r.trigger_item_id) (evoByItem[r.trigger_item_id] ||= new Map()).set(+sid, 'usar');
+    if (r.held_item_id) (evoByItem[r.held_item_id] ||= new Map()).set(+sid, +r.evolution_trigger_id === 2 ? 'intercambio' : 'equipado');
+  }
+}
+const wildByItem = {};
+for (const r of read('pokemon_items')) {
+  if (!keepPid.has(r.pokemon_id)) continue;
+  (wildByItem[r.item_id] ||= new Set()).add(+r.pokemon_id);
+}
+const itemsOut = {};
+const itemSprites = [];
+for (const it of itemsRows) {
+  const c = +it.category_id;
+  if (!ITEM_CAT[c]) continue;
+  const name = itemName(it.id);
+  if (!name) continue;
+  itemSprites.push(it.identifier);
+  itemsOut[it.id] = [
+    name, ITEM_CAT[c], ITEM_GROUP(c), itemText[it.id]?.t || '', it.identifier,
+    [...(evoByItem[it.id] || new Map())].sort((a, b) => a[0] - b[0]),
+    [...(wildByItem[it.id] || [])].sort((a, b) => a - b),
+  ];
+}
+fs.writeFileSync(path.join(OUT, 'items.json'), JSON.stringify(itemsOut));
+fs.writeFileSync('raw/item-sprites.json', JSON.stringify(itemSprites));
+
+// ---------- Naturalezas ----------
+const natureName = namesOf(read('nature_names'), 'nature_id');
+const naturesOut = {};
+for (const n of read('natures')) naturesOut[n.id] = [natureName(n.id) || pretty(n.identifier), +n.increased_stat_id, +n.decreased_stat_id, +n.likes_flavor_id, +n.hates_flavor_id];
+fs.writeFileSync(path.join(OUT, 'natures.json'), JSON.stringify(naturesOut));
+
+// ---------- Qué Pokémon (y formas) tienen movimientos en cada juego ----------
+const vgDex = {};
+for (const [pid, byVg] of learn) {
+  if (!keepPid.has(pid)) continue;
+  for (const vg of Object.keys(byVg)) (vgDex[vg] ||= []).push(+pid);
+}
+for (const l of Object.values(vgDex)) l.sort((a, b) => a - b);
+fs.writeFileSync(path.join(OUT, 'vg-dex.json'), JSON.stringify(vgDex));
+
 for (const [cid, data] of Object.entries(chunks)) {
   fs.writeFileSync(path.join(OUT, 'p', `${cid}.json`), JSON.stringify(data));
 }

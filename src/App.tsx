@@ -10,7 +10,10 @@ const valid = (db: Db, r: Route): Route => {
   if (!r) return null;
   if (r.kind === 'pokemon') return r.id >= 1 && r.id <= db.index.length ? r : null;
   if (r.kind === 'mov') return db.moves[r.id] ? r : null;
-  return db.abilities[r.id] ? r : null;
+  if (r.kind === 'hab') return db.abilities[r.id] ? r : null;
+  if (r.kind === 'obj') return db.items[r.id] ? r : null;
+  return r; // equipos / equipo
+
 };
 
 export default function App() {

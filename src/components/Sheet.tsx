@@ -5,6 +5,8 @@ import { animateSheet, flight, fly } from '../flight';
 import Detail from './Detail';
 import MovePage from './MovePage';
 import AbilityPage from './AbilityPage';
+import ItemPage from './ItemPage';
+import { TeamPage, TeamsPage } from './Teams';
 
 /** Capa que se abre encima de la lista. Adentro cambia de pantalla (Pokémon, movimiento, habilidad). */
 export default function Sheet({ db, route, closing, onClosed }: { db: Db; route: NonNullable<Route>; closing: boolean; onClosed: () => void }) {
@@ -57,6 +59,9 @@ export default function Sheet({ db, route, closing, onClosed }: { db: Db; route:
         {route.kind === 'pokemon' && <Detail db={db} id={route.id} />}
         {route.kind === 'mov' && <MovePage db={db} id={route.id} />}
         {route.kind === 'hab' && <AbilityPage db={db} id={route.id} />}
+        {route.kind === 'obj' && <ItemPage db={db} id={route.id} />}
+        {route.kind === 'equipos' && <TeamsPage db={db} />}
+        {route.kind === 'equipo' && <TeamPage db={db} id={route.id} />}
       </div>
     </div>
   );

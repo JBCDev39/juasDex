@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "data": "node scripts/build-data.mjs raw/csv public/data",
-    "sprites": "node scripts/build-sprites.mjs raw/sprites public/sprites raw/sprites-shiny"
+    "sprites": "node scripts/build-sprites.mjs raw/sprites public/sprites raw/sprites-shiny",
+    "items": "node scripts/build-item-sprites.mjs raw/items public/sprites"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",

@@ -2,11 +2,13 @@
 // Cada pantalla que se abre se apila en el historial; "atrás" la quita.
 // Anterior/siguiente reemplazan la pantalla actual para no llenar el historial.
 
-export type Route = { kind: 'pokemon' | 'mov' | 'hab'; id: number } | null;
+export type RouteKind = 'pokemon' | 'mov' | 'hab' | 'obj' | 'equipo' | 'equipos';
+export type Route = { kind: RouteKind; id: number } | null;
 
 export const parseRoute = (hash = location.hash): Route => {
-  const m = hash.match(/^#(pokemon|mov|hab)-(\d+)$/);
-  return m ? { kind: m[1] as 'pokemon' | 'mov' | 'hab', id: Number(m[2]) } : null;
+  if (hash === '#equipos') return { kind: 'equipos', id: 0 };
+  const m = hash.match(/^#(pokemon|mov|hab|obj|equipo)-(\d+)$/);
+  return m ? { kind: m[1] as RouteKind, id: Number(m[2]) } : null;
 };
 
 const depth = () => (history.state as { d?: number } | null)?.d ?? 0;

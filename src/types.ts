@@ -18,6 +18,29 @@ export type Learn = [number, number, number | string];
 /** [lugar, método, nivel mín, nivel máx, probabilidad] */
 export type Encounter = [string, string, number, number, number];
 
+/** [nombre, categoría, grupo, descripción, id del dibujo, evoluciones [especie, modo][], lo llevan en estado salvaje] */
+export type Item = [string, string, 'equip' | 'evo' | 'baya' | 'ball' | 'med', string, string, [number, string][], number[]];
+
+/** [nombre, stat que sube, stat que baja, sabor favorito, sabor odiado] (stats 2-6) */
+export type Nature = [string, number, number, number, number];
+
+export interface TeamMember {
+  pid: number;
+  species: number;
+  types: number[];
+  abil: number;
+  nature: number;
+  item: number;
+  moves: number[];
+}
+
+export interface Team {
+  id: number;
+  name: string;
+  vg: number;
+  members: (TeamMember | null)[];
+}
+
 export interface Variety {
   pid: number;
   name: string;
@@ -71,4 +94,7 @@ export interface Db {
   sprites: Record<string, [number, number]>;
   /** formas alternativas: pid -> [especie, nombre de la forma] */
   forms: Record<string, [number, string]>;
+  items: Record<string, Item>;
+  itemSprites: Record<string, number>;
+  natures: Record<string, Nature>;
 }

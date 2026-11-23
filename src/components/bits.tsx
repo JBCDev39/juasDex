@@ -30,6 +30,26 @@ export function Sprite({ db, pid, size = 96, fallback, shiny, style, vt }: {
   );
 }
 
+/** Dibujo de un objeto (de la hoja items.webp, celdas de 60 px, 16 columnas) */
+export function ItemIcon({ db, ident, size = 30 }: { db: Db; ident: string; size?: number }) {
+  const i = db.itemSprites[ident];
+  if (i == null) return <span className="item-icon item-icon--empty" style={{ width: size, height: size }} aria-hidden />;
+  const k = size / 60;
+  return (
+    <span
+      className="item-icon"
+      aria-hidden
+      style={{
+        width: size, height: size, backgroundImage: 'url(sprites/items.webp)',
+        backgroundSize: `${960 * k}px auto`, backgroundPosition: `${-(i % 16) * 60 * k}px ${-Math.floor(i / 16) * 60 * k}px`,
+      }}
+    />
+  );
+}
+
+export const STAT_SHORT = ['', 'PS', 'Ataque', 'Defensa', 'At. Esp.', 'Def. Esp.', 'Velocidad'];
+export const FLAVORS = ['', 'Picante', 'Seco', 'Dulce', 'Amargo', 'Ácido'];
+
 export function TypeBadge({ db, id, small, style }: { db: Db; id: number; small?: boolean; style?: CSSProperties }) {
   const t = db.meta.types[id];
   if (!t) return null;
@@ -113,7 +133,7 @@ const useNarrow = () => {
   return n;
 };
 
-export function Picker({ title, value, options, onChange, layout = 'list', tone = 'plain', display, placeholder }: {
+export function Picker({ title, value, options, onChange, layout = 'list', tone = 'plain', display, placeholder, searchable }: {
   title: string;
   value: number;
   options: Opt[];
@@ -122,8 +142,13 @@ export function Picker({ title, value, options, onChange, layout = 'list', tone 
   tone?: 'plain' | 'red';
   display?: ReactNode;
   placeholder?: string;
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const nq = query.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const fold = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const visible = nq ? options.filter((o) => fold(`${o.label} ${o.hint ?? ''} ${o.group ?? ''}`).includes(nq)) : options;
   const [shown, setShown] = useState(false); // para animar la salida
   const [pos, setPos] = useState<CSSProperties>({});
   const btn = useRef<HTMLButtonElement>(null);
@@ -142,6 +167,7 @@ export function Picker({ title, value, options, onChange, layout = 'list', tone 
         ? { left, width, top: r.bottom + 8, maxHeight, transformOrigin: 'top' }
         : { left, width, bottom: window.innerHeight - r.top + 8, maxHeight, transformOrigin: 'bottom' });
     }
+    setQuery('');
     setShown(true);
     requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true)));
   };
@@ -180,7 +206,8 @@ export function Picker({ title, value, options, onChange, layout = 'list', tone 
   useEffect(() => {
     if (!open) return;
     const t = window.setTimeout(() => {
-      (panel.current?.querySelector<HTMLElement>('.is-sel') ?? panel.current?.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
+      if (searchable) panel.current?.querySelector<HTMLInputElement>('.pop__search')?.focus({ preventScroll: true });
+      else (panel.current?.querySelector<HTMLElement>('.is-sel') ?? panel.current?.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
     }, 320);
     return () => window.clearTimeout(t);
   }, [open]);
@@ -205,8 +232,12 @@ export function Picker({ title, value, options, onChange, layout = 'list', tone 
           <div ref={panel} className="pop__panel" style={narrow ? undefined : pos} role="listbox" aria-label={title}>
             {narrow && <div className="pop__grip" aria-hidden />}
             <div className="pop__title">{title}</div>
+            {searchable && (
+              <input className="pop__search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar…" aria-label={`Buscar en ${title}`} autoComplete="off" />
+            )}
             <div className={`pop__opts pop__opts--${layout}`}>
-              {options.map((o, i) => {
+              {visible.length === 0 && <div className="pop__none">Nada coincide.</div>}
+              {visible.map((o) => {
                 const header = o.group && o.group !== lastGroup ? o.group : '';
                 if (o.group) lastGroup = o.group;
                 return (

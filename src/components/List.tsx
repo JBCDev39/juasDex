@@ -1,16 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import type { Db } from '../types';
 import { favs, pad, store } from '../data';
-import { Ball, Chevron, GENS, MoveClass, REGIONS, Sprite, TypeBadge, reducedMotion } from './bits';
+import { Ball, Chevron, FLAVORS, GENS, ItemIcon, MoveClass, REGIONS, STAT_SHORT, Sprite, TypeBadge, reducedMotion } from './bits';
 import { glyphPaths } from './glyphs';
 import { flight } from '../flight';
 import { nav } from '../nav';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 type Panel = '' | 'type' | 'region';
-type Tab = 'pokemon' | 'mov' | 'hab';
-const TAB_LABEL: Record<Tab, string> = { pokemon: 'Pokémon', mov: 'Movimientos', hab: 'Habilidades' };
-const TABS: Tab[] = ['pokemon', 'mov', 'hab'];
+type Tab = 'pokemon' | 'mov' | 'hab' | 'obj' | 'nat';
+const TAB_LABEL: Record<Tab, string> = { pokemon: 'Pokémon', mov: 'Movimientos', hab: 'Habilidades', obj: 'Objetos', nat: 'Naturalezas' };
+const TABS: Tab[] = ['pokemon', 'mov', 'hab', 'obj', 'nat'];
+const ITEM_GROUPS: [string, string][] = [['', 'Todos'], ['equip', 'Equipables'], ['evo', 'Evolución'], ['baya', 'Bayas'], ['ball', 'Poké Balls'], ['med', 'Medicinas']];
 
 // La pestaña elegida solo se recuerda durante la sesión
 const session = {
@@ -25,6 +26,7 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const [favOnly, setFavOnly] = useState(() => store.get('favOnly', false));
   const [tab, setTabState] = useState<Tab>(() => session.get('tab', 'pokemon') as Tab);
   const [panel, setPanel] = useState<Panel>('');
+  const [itemGroup, setItemGroup] = useState(() => session.get('itemGroup', ''));
   const [searching, setSearching] = useState(false);
   const [listSearch, setListSearch] = useState(false);
   const [listFilters, setListFilters] = useState(false);
@@ -151,7 +153,11 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   }), [allMoves, nq, types, gen]);
   const allAbil = useMemo(() => Object.entries(db.abilities).map(([id, a]) => [+id, a] as const).filter(([, a]) => a[2] > 0).sort((a, b) => a[1][0].localeCompare(b[1][0], 'es')), [db]);
   const abil = useMemo(() => allAbil.filter(([, a]) => (!gen || a[2] === gen) && (!nq || norm(a[0]).includes(nq))), [allAbil, nq, gen]);
-  const counts: Record<Tab, number> = { pokemon: pokemon.length, mov: moves.length, hab: abil.length };
+  const allItems = useMemo(() => Object.entries(db.items).map(([id, it]) => [+id, it] as const).sort((a, b) => a[1][0].localeCompare(b[1][0], 'es')), [db]);
+  const items = useMemo(() => allItems.filter(([, it]) => (!itemGroup || it[2] === itemGroup) && (!nq || norm(it[0]).includes(nq))), [allItems, itemGroup, nq]);
+  const allNat = useMemo(() => Object.entries(db.natures).map(([id, n]) => [+id, n] as const).sort((a, b) => a[1][0].localeCompare(b[1][0], 'es')), [db]);
+  const natures = useMemo(() => allNat.filter(([, n]) => !nq || norm(n[0]).includes(nq)), [allNat, nq]);
+  const counts: Record<Tab, number> = { pokemon: pokemon.length, mov: moves.length, hab: abil.length, obj: items.length, nat: natures.length };
 
   // Al buscar o filtrar desde la lista: el inicio se acomoda sin animar (está fuera de la vista)
   // y la vista se queda al principio de los resultados, sin saltos.
@@ -204,7 +210,7 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     }, { rootMargin: '0px 0px -4% 0px' });
     items.forEach((el) => io.observe(el));
     return () => io.disconnect();
-  }, [pokemon, moves, abil, tab, ready]);
+  }, [pokemon, moves, abil, items, natures, tab, ready]);
 
   const tabIdx = TABS.indexOf(tab);
   // La píldora roja se mide sobre la pestaña activa (las pestañas no miden lo mismo)
@@ -212,6 +218,10 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     const measure = () => {
       const el = tabsRef.current?.querySelectorAll<HTMLElement>('.seg__btn')[tabIdx];
       if (el) setTabPill((p) => (p.left === el.offsetLeft && p.width === el.offsetWidth ? p : { left: el.offsetLeft, width: el.offsetWidth }));
+      const bar = tabsRef.current;
+      if (el && bar && (el.offsetLeft < bar.scrollLeft || el.offsetLeft + el.offsetWidth > bar.scrollLeft + bar.clientWidth)) {
+        bar.scrollTo({ left: el.offsetLeft - 12, behavior: reducedMotion() ? 'auto' : 'smooth' });
+      }
     };
     measure();
     window.addEventListener('resize', measure);
@@ -225,6 +235,14 @@ export default function List({ db }: { db: Db; stamp?: number }) {
       <header className="home__hero" ref={hero}>
         <Ball className="home__ball" size={520} />
         <span className="leds" aria-hidden><i /><i /><i /></span>
+        <button className="teams-btn" onClick={() => nav.push('equipos')}>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
+            <circle cx="7" cy="15" r="4.6" fill="#f6f5f2" stroke="#0e1317" strokeWidth="1.6" /><path d="M2.4 15a4.6 4.6 0 0 1 9.2 0Z" fill="currentColor" stroke="#0e1317" strokeWidth="1.6" />
+            <circle cx="17" cy="15" r="4.6" fill="#f6f5f2" stroke="#0e1317" strokeWidth="1.6" /><path d="M12.4 15a4.6 4.6 0 0 1 9.2 0Z" fill="currentColor" stroke="#0e1317" strokeWidth="1.6" />
+            <circle cx="12" cy="7" r="4.6" fill="#f6f5f2" stroke="#0e1317" strokeWidth="1.6" /><path d="M7.4 7a4.6 4.6 0 0 1 9.2 0Z" fill="currentColor" stroke="#0e1317" strokeWidth="1.6" />
+          </svg>
+          Equipos
+        </button>
         <div className="home__inner" ref={homeInner}>
           <h1 className="wordmark">JuasDex</h1>
 
@@ -377,13 +395,21 @@ export default function List({ db }: { db: Db; stamp?: number }) {
         <div className="list-wrap">
           <p className="count">
             <span key={`${tab}${counts[tab]}`} className="count__n">
-              {counts[tab]} {tab === 'pokemon' ? 'Pokémon' : tab === 'mov' ? (counts[tab] === 1 ? 'movimiento' : 'movimientos') : (counts[tab] === 1 ? 'habilidad' : 'habilidades')}
+              {counts[tab]} {({ pokemon: ['Pokémon', 'Pokémon'], mov: ['movimiento', 'movimientos'], hab: ['habilidad', 'habilidades'], obj: ['objeto', 'objetos'], nat: ['naturaleza', 'naturalezas'] } as Record<Tab, [string, string]>)[tab][counts[tab] === 1 ? 0 : 1]}
               {favOnly && tab === 'pokemon' ? ' favoritos' : ''}
             </span>
             {active && <button className="link-btn" onClick={clearAll}>Limpiar todo</button>}
           </p>
-          {tab === 'hab' && types.length > 0 && <p className="note note--inline">El filtro de tipo no aplica a habilidades.</p>}
+          {(tab === 'hab' || tab === 'obj' || tab === 'nat') && types.length > 0 && <p className="note note--inline">El filtro de tipo no aplica aquí.</p>}
+          {(tab === 'obj' || tab === 'nat') && gen > 0 && <p className="note note--inline">El filtro de región no aplica aquí.</p>}
           {tab !== 'pokemon' && favOnly && <p className="note note--inline">Favoritos solo aplica a Pokémon.</p>}
+          {tab === 'obj' && (
+            <div className="chips-row" role="group" aria-label="Clase de objeto">
+              {ITEM_GROUPS.map(([g, label]) => (
+                <button key={g} className={`fchip${itemGroup === g ? ' is-on' : ''}`} aria-pressed={itemGroup === g} onClick={() => { setItemGroup(g); session.set('itemGroup', g); }}>{label}</button>
+              ))}
+            </div>
+          )}
 
           <div ref={gridRef}>
             {(ready || active) && tab === 'pokemon' && (
@@ -433,6 +459,56 @@ export default function List({ db }: { db: Db; stamp?: number }) {
                     </li>
                   ))}
                 </ul>
+              )
+            )}
+
+            {(ready || active) && tab === 'obj' && (
+              items.length === 0 ? (
+                <Empty>Diay, no hay ningún objeto así.{otherHits.length > 0 && <Hits tabs={otherHits} counts={counts} onPick={setTab} />}</Empty>
+              ) : (
+                <ul className="rows">
+                  {items.map(([id, it]) => (
+                    <li key={id} className="reveal">
+                      <button className="irow" onClick={() => nav.push(`obj-${id}`)}>
+                        <span className="irow__icon"><ItemIcon db={db} ident={it[4]} size={40} /></span>
+                        <span className="arow__main">
+                          <span className="arow__top"><strong>{it[0]}</strong><span className="arow__gen">{it[1]}</span></span>
+                          {it[3] && <span className="arow__desc">{it[3]}</span>}
+                        </span>
+                        <Chevron />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )
+            )}
+
+            {(ready || active) && tab === 'nat' && (
+              natures.length === 0 ? (
+                <Empty>Diay, no hay ninguna naturaleza así.{otherHits.length > 0 && <Hits tabs={otherHits} counts={counts} onPick={setTab} />}</Empty>
+              ) : (
+                <>
+                  <ul className="rows">
+                    {natures.map(([id, n]) => {
+                      const neutral = n[1] === n[2];
+                      return (
+                        <li key={id} className="reveal">
+                          <div className={`nrow${neutral ? ' is-neutral' : ''}`}>
+                            <strong className="nrow__name">{n[0]}</strong>
+                            {neutral ? <span className="nrow__neutral">Neutral</span> : (
+                              <span className="nrow__stats">
+                                <span className="nrow__up">▲ {STAT_SHORT[n[1]]}</span>
+                                <span className="nrow__down">▼ {STAT_SHORT[n[2]]}</span>
+                              </span>
+                            )}
+                            {!neutral && <span className="nrow__flavor">Le gusta lo {FLAVORS[n[3]].toLowerCase()} · odia lo {FLAVORS[n[4]].toLowerCase()}</span>}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p className="note">Cada naturaleza sube un 10 % una estadística y baja un 10 % otra. Las neutrales no cambian nada.</p>
+                </>
               )
             )}
 

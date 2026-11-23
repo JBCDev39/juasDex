@@ -6,7 +6,7 @@ import Detail from './Detail';
 import MovePage from './MovePage';
 import AbilityPage from './AbilityPage';
 import ItemPage from './ItemPage';
-import { ImportPage, TeamPage, TeamsPage } from './Teams';
+import { GenPage, ImportPage, TeamPage, TeamsPage } from './Teams';
 
 /** Capa que se abre encima de la lista. Adentro cambia de pantalla (Pokémon, movimiento, habilidad). */
 export default function Sheet({ db, route, closing, onClosed }: { db: Db; route: NonNullable<Route>; closing: boolean; onClosed: () => void }) {
@@ -61,6 +61,7 @@ export default function Sheet({ db, route, closing, onClosed }: { db: Db; route:
         {route.kind === 'hab' && <AbilityPage db={db} id={route.id} />}
         {route.kind === 'obj' && <ItemPage db={db} id={route.id} />}
         {route.kind === 'equipos' && <TeamsPage db={db} />}
+        {route.kind === 'generar' && <GenPage db={db} />}
         {route.kind === 'equipo' && <TeamPage db={db} id={route.id} />}
         {route.kind === 'importar' && <ImportPage db={db} code={route.data ?? ''} />}
       </div>

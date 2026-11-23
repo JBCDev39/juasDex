@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Db, Team, TeamMember, Variety } from '../types';
-import { defense, loadSpecies, loadVgDex, pidInfo, store, teams } from '../data';
+import { defense, favs, loadSpecies, loadVgDex, pidInfo, store, teams } from '../data';
+import { generateTeam, loadPool, type GenOptions, type Pool, type Purpose } from '../generator';
 import { nav } from '../nav';
-import { BackButton, GENS, ItemIcon, MiniMon, MoveClass, Picker, STAT_SHORT, Spinner, Sprite, TypeBadge, type Opt } from './bits';
+import { BackButton, GENS, ItemIcon, MiniMon, MoveClass, Picker, STAT_SHORT, Spinner, Sprite, TypeBadge, reducedMotion, type Opt } from './bits';
 import { glyphPaths } from './glyphs';
 import { copyText, decodeTeam, fromShowdown, loadEn, teamLink, toShowdown } from '../share';
 
@@ -62,6 +63,11 @@ export function TeamsPage({ db }: { db: Db }) {
       </section>
       <main className="body">
         <div className="stack-gap">
+          <button className="gen-cta" onClick={() => nav.push('generar')}>
+            <span className="gen-cta__icon" aria-hidden><svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 3l2.2 5.6L20 9.3l-4.5 3.8 1.5 5.9L12 15.8 7 19l1.5-5.9L4 9.3l5.8-.7Z" fill="currentColor" /></svg></span>
+            <span className="gen-cta__text"><strong>Generar equipo</strong><small>Conteste 3 preguntas y JuasDex lo arma por usted.</small></span>
+            <svg className="gen-cta__go" viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
           <div className="btn-row">
             <button className="big-btn" onClick={create}>
               <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" /></svg>
@@ -268,8 +274,7 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
             </section>
           )}
 
-          {members.length > 0 && <TeamDefense db={db} members={members} />}
-          {members.length > 0 && <TeamCoverage db={db} members={members} />}
+          {members.length > 0 && <TeamAnalysis db={db} members={members} />}
 
           <div className="danger-zone">
             {confirmDel ? (
@@ -576,59 +581,346 @@ function EditMember({ db, team, member, onChange, onRemove, onSwap, onDone }: {
 }
 
 /* ---------- Análisis ---------- */
-function TeamDefense({ db, members }: { db: Db; members: TeamMember[] }) {
+const ALL_T = Array.from({ length: 18 }, (_, i) => i + 1);
+const gradeOf = (bad: number, steps: number[]) => ['A', 'B', 'C', 'D', 'F'][steps.findIndex((x) => bad <= x) === -1 ? 4 : steps.findIndex((x) => bad <= x)];
+const mxLabel = (x: number) => (x === 4 ? '×4' : x === 2 ? '×2' : '');
+
+function analyze(db: Db, members: TeamMember[], pool: Pool | null) {
   const defs = members.map((m) => defense(db, m.types));
-  const rows = Object.keys(db.meta.types).map(Number).map((t) => {
-    const mults = defs.map((d) => d[t]);
-    return { t, mults, weak: mults.filter((x) => x > 1).length, resist: mults.filter((x) => x > 0 && x < 1).length, immune: mults.filter((x) => x === 0).length };
-  }).sort((a, b) => (b.weak - b.resist - b.immune) - (a.weak - a.resist - a.immune) || a.t - b.t);
-  const danger = rows.filter((r) => r.weak >= 3 || (r.weak >= 2 && r.resist + r.immune === 0));
-  const label = (x: number) => (x === 0 ? '0' : x === 0.25 ? '¼' : x === 0.5 ? '½' : x === 1 ? '' : `${x}`);
+  const name = (m: TeamMember) => pidInfo(db, m.pid).name;
+  const rows = ALL_T.map((t) => {
+    const mults = defs.map((d) => d[t] ?? 1);
+    const weak = mults.filter((x) => x > 1).length;
+    const resist = mults.filter((x) => x < 1).length;
+    const quad = members.filter((_, i) => mults[i] >= 4).map(name);
+    return { t, mults, weak, resist, quad, score: weak - resist + quad.length * 0.5 };
+  }).sort((a, b) => b.score - a.score || b.weak - a.weak || a.t - b.t);
+  const defBad = rows.reduce((s, r) => s + Math.max(0, r.weak - r.resist) + (r.weak >= 3 ? 1.5 : 0) + r.quad.length * 0.5, 0);
+  const threats = rows.filter((r) => r.weak >= 2 && r.weak > r.resist).slice(0, 3);
+  // Qué tipo (solo) aguantaría mejor esos golpes sin sumar problemas
+  const fixes = threats.length ? ALL_T.map((d) => {
+    let s = 0;
+    for (const r of threats) { const m = db.meta.chart[r.t]?.[d] ?? 1; s += m < 1 ? (m === 0 ? 1.3 : 1) : m > 1 ? -1.2 : 0; }
+    for (const r of rows) if (r.weak >= 2 && !threats.includes(r) && (db.meta.chart[r.t]?.[d] ?? 1) > 1) s -= 0.5;
+    return { d, s };
+  }).filter((x) => x.s >= 1).sort((a, b) => b.s - a.s).slice(0, 2).map((x) => x.d) : [];
+
+  // Ataques
+  const atk = members.flatMap((m) => m.moves.filter((mid) => db.moves[mid]).map((mid) => ({ m, mid, type: db.moves[mid][1], cls: db.moves[mid][2] })));
+  const phys = atk.filter((x) => x.cls === 2).length;
+  const spec = atk.filter((x) => x.cls === 3).length;
+  const status = atk.filter((x) => x.cls === 1).length;
+  const hitters = (d: number) => atk.filter((x) => x.cls !== 1).map((x) => ({ ...x, mult: db.meta.chart[x.type]?.[d] ?? 1 })).filter((x) => x.mult >= 2)
+    .sort((a, b) => b.mult - a.mult);
+  const covered = ALL_T.filter((d) => hitters(d).length > 0);
+  const gaps = ALL_T.filter((d) => !covered.includes(d));
+  const hasAttacks = phys + spec > 0;
+  const moveFix = hasAttacks && gaps.length ? ALL_T.map((a) => ({ a, n: gaps.filter((g) => (db.meta.chart[a]?.[g] ?? 1) >= 2).length })).sort((x, y) => y.n - x.n)[0] : null;
+
+  // Velocidad
+  const speeds = pool ? members.map((m) => pool[m.pid]?.[1]?.[5] ?? 0) : null;
+  const fast = speeds ? speeds.filter((v) => v >= 90).length : 0;
+  const noMoves = members.filter((m) => !m.moves.some((mid) => db.moves[mid])).map(name);
+
+  return { rows, defBad, threats, fixes, phys, spec, status, hitters, covered, gaps, hasAttacks, moveFix, speeds, fast, noMoves };
+}
+
+type Insight = { tone: 'warn' | 'ok' | 'tip'; body: ReactNode };
+
+function TeamAnalysis({ db, members }: { db: Db; members: TeamMember[] }) {
+  const [pool, setPool] = useState<Pool | null>(null);
+  const [full, setFull] = useState(false);
+  const [pickT, setPickT] = useState<number | null>(null);
+  useEffect(() => { loadPool().then(setPool).catch(() => undefined); }, []);
+  const a = useMemo(() => analyze(db, members, pool), [db, members, pool]);
+  const n = members.length;
+  const tName = (t: number) => db.meta.types[t]?.[0] ?? '';
+  const defGrade = gradeOf(a.defBad, [1, 3, 5.5, 8.5]);
+  const covGrade = a.hasAttacks ? gradeOf(18 - a.covered.length, [2, 5, 8, 11]) : '—';
+
+  const ins: Insight[] = [];
+  for (const r of a.threats) {
+    ins.push({ tone: 'warn', body: <><TypeBadge db={db} id={r.t} small /> <span><b>{r.weak} débiles</b> · {r.resist === 0 ? 'nadie lo resiste' : `${r.resist} lo resiste${r.resist > 1 ? 'n' : ''}`}{r.quad.length ? <> · <b>{r.quad.join(' y ')}</b> recibe ×4</> : null}</span></> });
+  }
+  if (a.threats.length && a.fixes.length) {
+    ins.push({ tone: 'tip', body: <span>Un Pokémon tipo {a.fixes.map((d, i) => <span key={d}>{i ? ' o ' : ''}<TypeBadge db={db} id={d} small /></span>)} aguantaría esos golpes.</span> });
+  }
+  if (!a.threats.length && n >= 3) ins.push({ tone: 'ok', body: <span>Defensa sólida: ningún tipo le pega fuerte a varios a la vez.</span> });
+  if (a.noMoves.length) ins.push({ tone: 'tip', body: <span>{a.noMoves.join(', ')} todavía no tiene{a.noMoves.length > 1 ? 'n' : ''} movimientos.</span> });
+  if (a.hasAttacks && a.phys + a.spec >= 4) {
+    if (a.spec === 0) ins.push({ tone: 'warn', body: <span>Todos sus ataques son <b>físicos</b>. Un rival con Intimidación o Fuego Fatuo lo frena; sume algo especial.</span> });
+    else if (a.phys === 0) ins.push({ tone: 'warn', body: <span>Todos sus ataques son <b>especiales</b>. Un Pokémon con mucha Def. Especial lo aguanta; sume algo físico.</span> });
+    else if (a.phys / a.spec >= 3 || a.spec / a.phys >= 3) ins.push({ tone: 'tip', body: <span>Casi todo es {a.phys > a.spec ? 'físico' : 'especial'} ({Math.max(a.phys, a.spec)} de {a.phys + a.spec} ataques).</span> });
+    else ins.push({ tone: 'ok', body: <span>Buen balance entre ataques físicos y especiales.</span> });
+  }
+  if (a.speeds && n >= 3) {
+    if (a.fast <= 1) ins.push({ tone: 'warn', body: <span>Equipo lento: {a.fast === 0 ? 'ninguno es rápido' : 'solo uno es rápido'} (velocidad base 90+). Un Pañuelo Elección o Espacio Raro le ayudaría.</span> });
+    else if (a.fast >= n - 1 && n >= 4) ins.push({ tone: 'ok', body: <span>Equipo veloz: {a.fast} de {n} pegan primero casi siempre.</span> });
+  }
+  if (a.moveFix && a.moveFix.n >= 2) ins.push({ tone: 'tip', body: <span>Un ataque tipo <TypeBadge db={db} id={a.moveFix.a} small /> le daría súper eficaz contra {a.moveFix.n} tipos que hoy no cubre.</span> });
+  if (!a.hasAttacks) ins.push({ tone: 'tip', body: <span>Elija movimientos de ataque para ver la cobertura y el balance.</span> });
+
+  const top = a.rows.filter((r) => r.weak || r.resist).slice(0, 6);
+  const picked = pickT ? a.hitters(pickT) : [];
   return (
-    <section className="panel">
-      <h3>Debilidades del equipo</h3>
-      {danger.length > 0 ? (
-        <p className="team-warn">Cuidado con: {danger.map((r) => <TypeBadge key={r.t} db={db} id={r.t} small />)}</p>
-      ) : <p className="team-ok">¡Bien balanceado! Ningún tipo pega fuerte a medio equipo.</p>}
-      <div className="matrix" style={{ '--cols': members.length } as CSSProperties}>
-        <span className="matrix__corner" />
-        {members.map((m, i) => <span key={i} className="matrix__head"><Sprite db={db} pid={m.pid} size={36} fallback={m.species} /></span>)}
-        <span className="matrix__head matrix__sum">Débil / Res.</span>
-        {rows.map((r) => (
-          <div key={r.t} className="matrix__row">
-            <span className="matrix__type"><TypeBadge db={db} id={r.t} small /></span>
-            {r.mults.map((x, i) => <span key={i} className={`matrix__cell m-${String(x).replace('.', '')}`}>{label(x)}</span>)}
-            <span className="matrix__sum"><b className="w">{r.weak}</b> / <b className="r">{r.resist + r.immune}</b></span>
+    <>
+      <section className="panel ana">
+        <h3>Análisis del equipo</h3>
+        <div className="grades">
+          <div className={`grade g-${defGrade}`}><b>{defGrade}</b><span>Defensa</span></div>
+          <div className={`grade g-${covGrade === '—' ? 'x' : covGrade}`}><b>{covGrade}</b><span>Cobertura{a.hasAttacks ? ` · ${a.covered.length}/18` : ''}</span></div>
+          <div className="grade grade--bar">
+            <span className="balance" aria-label={`${a.phys} físicos, ${a.spec} especiales, ${a.status} de estado`}>
+              {a.phys + a.spec + a.status === 0 ? <i className="balance__none" /> : <>
+                <i className="cls-phys" style={{ flex: a.phys }} /><i className="cls-spec" style={{ flex: a.spec }} /><i className="cls-status" style={{ flex: a.status }} />
+              </>}
+            </span>
+            <span className="balance__nums"><em className="cls-phys">{a.phys}</em> fís · <em className="cls-spec">{a.spec}</em> esp · <em className="cls-status">{a.status}</em> est</span>
           </div>
-        ))}
-      </div>
-      <p className="note">×2 o más en rojo, resistencias en verde, inmunidad en gris. No toma en cuenta habilidades.</p>
-    </section>
+          <div className="grade grade--bar">
+            <span className="speed-dots">{members.map((m, i) => <i key={i} className={a.speeds && a.speeds[i] >= 90 ? 'on' : ''} title={a.speeds ? `${pidInfo(db, m.pid).name}: ${a.speeds[i]}` : ''} />)}</span>
+            <span className="balance__nums">{a.speeds ? `${a.fast} de ${n} rápidos` : 'Velocidad…'}</span>
+          </div>
+        </div>
+        <ul className="insights">
+          {ins.map((x, i) => <li key={i} className={`ins ins--${x.tone}`} style={{ '--i': i } as CSSProperties}><span className="ins__dot" aria-hidden />{x.body}</li>)}
+        </ul>
+      </section>
+
+      <section className="panel">
+        <div className="panel__head"><h3>Defensa por tipo</h3><span className="muted small">resiste · débil</span></div>
+        <div className="dbars">
+          {top.map((r) => (
+            <div key={r.t} className="dbar">
+              <span className="dbar__type"><TypeBadge db={db} id={r.t} small /></span>
+              <span className="dbar__side dbar__side--l">{Array.from({ length: n }, (_, i) => <i key={i} className={i < r.resist ? 'on' : ''} />)}</span>
+              <span className="dbar__side dbar__side--r">{Array.from({ length: n }, (_, i) => <i key={i} className={i < r.weak ? (i < r.quad.length ? 'on q' : 'on') : ''} />)}</span>
+            </div>
+          ))}
+        </div>
+        <button className="lf__link more-link" onClick={() => setFull((x) => !x)}>{full ? 'Ocultar tabla' : 'Ver tabla completa'}</button>
+        {full && (
+          <>
+            <div className="matrix" style={{ '--cols': n } as CSSProperties}>
+              <span className="matrix__corner" />
+              {members.map((m, i) => <span key={i} className="matrix__head"><Sprite db={db} pid={m.pid} size={36} fallback={m.species} /></span>)}
+              <span className="matrix__head matrix__sum">Débil / Res.</span>
+              {[...a.rows].sort((x, y) => x.t - y.t).map((r) => (
+                <div key={r.t} className="matrix__row">
+                  <span className="matrix__type"><TypeBadge db={db} id={r.t} small /></span>
+                  {r.mults.map((x, i) => <span key={i} className={`matrix__cell m-${String(x).replace('.', '')}`}>{x === 0 ? '0' : x === 0.25 ? '¼' : x === 0.5 ? '½' : x === 1 ? '' : x}</span>)}
+                  <span className="matrix__sum"><b className="w">{r.weak}</b> / <b className="r">{r.resist}</b></span>
+                </div>
+              ))}
+            </div>
+            <p className="note">×2 o más en rojo, resistencias en verde, inmunidad en gris. No toma en cuenta habilidades.</p>
+          </>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel__head"><h3>Cobertura de ataques</h3><span className="pill">{a.covered.length} de 18</span></div>
+        {!a.hasAttacks ? <p className="muted">Elija movimientos de ataque para ver contra qué tipos pega súper eficaz.</p> : (
+          <>
+            <p className="muted small">Toque un tipo para ver quién le pega fuerte.</p>
+            <div className="covgrid">
+              {ALL_T.map((t) => (
+                <button key={t} className={`covcell t-${db.meta.types[t]?.[1]}${a.covered.includes(t) ? '' : ' is-gap'}${pickT === t ? ' is-on' : ''}`} onClick={() => setPickT(pickT === t ? null : t)}>
+                  <svg viewBox="0 0 24 24" aria-hidden>{glyphPaths(db.meta.types[t]?.[1] ?? 'normal')}</svg>
+                  <span>{tName(t)}</span>
+                </button>
+              ))}
+            </div>
+            {pickT && (
+              <div className="covpick">
+                <p className="covpick__title">Contra <TypeBadge db={db} id={pickT} small /></p>
+                {picked.length === 0 ? <p className="muted small">Nadie le pega súper eficaz. Busque un ataque de un tipo que le gane.</p> : (
+                  <ul>
+                    {picked.slice(0, 8).map((x, i) => (
+                      <li key={i}>
+                        <Sprite db={db} pid={x.m.pid} size={36} fallback={x.m.species} />
+                        <span><b>{pidInfo(db, x.m.pid).name}</b> · {db.moves[x.mid][0]}</span>
+                        <em className={x.mult >= 4 ? 'x4' : ''}>{mxLabel(x.mult)}</em>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+    </>
   );
 }
 
-function TeamCoverage({ db, members }: { db: Db; members: TeamMember[] }) {
-  const attackTypes = [...new Set(members.flatMap((m) => m.moves.filter((mid) => db.moves[mid] && db.moves[mid][2] !== 1).map((mid) => db.moves[mid][1])))];
-  const all = Object.keys(db.meta.types).map(Number);
-  const best = (d: number) => attackTypes.reduce((mx, a) => Math.max(mx, db.meta.chart[a]?.[d] ?? 1), attackTypes.length ? 0 : 1);
-  const covered = all.filter((d) => best(d) >= 2);
-  const missing = all.filter((d) => best(d) < 2);
+/* ---------- Generador ---------- */
+const PURPOSES: { id: Purpose; title: string; desc: string; icon: string }[] = [
+  { id: 'historia', title: 'Historia', desc: 'Para jugar la aventura: fuertes, variados y fáciles de usar.', icon: 'M4 19V6l8-3 8 3v13l-8 3-8-3Zm8-16v19' },
+  { id: 'combates', title: 'Combates', desc: 'Para pelear con amigos: más poder y sets más afilados.', icon: 'M5 19 19 5m-4 0h4v4M5 5l14 14m-4 0h4v-4' },
+  { id: 'monotipo', title: 'Monotipo', desc: 'Los seis de un mismo tipo. Usted elige cuál.', icon: 'M12 3 21 12 12 21 3 12Z' },
+  { id: 'sorpresa', title: 'Sorpréndame', desc: 'Al azar, pero con sentido. Para salir de la rutina.', icon: 'M12 3v4m0 10v4M3 12h4m10 0h4M6 6l2.5 2.5m7 7L18 18m0-12-2.5 2.5m-7 7L6 18' },
+];
+
+export function GenPage({ db }: { db: Db }) {
+  const [vgDex, setVgDex] = useState<Record<string, number[]> | null>(null);
+  const [pool, setPool] = useState<Pool | null>(null);
+  const [loadErr, setLoadErr] = useState(false);
+  const [o, setO] = useState<GenOptions>(() => ({ vg: 25, purpose: 'historia', monoType: 10, anchors: [], legends: false, ...store.get<Partial<GenOptions>>('genOpts', {}) }));
+  const [stage, setStage] = useState<'ask' | 'busy' | 'done' | 'error'>('ask');
+  const [result, setResult] = useState<Omit<Team, 'id'> | null>(null);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    Promise.all([loadVgDex(), loadPool()]).then(([v, p]) => { setVgDex(v); setPool(p); }).catch(() => setLoadErr(true));
+  }, []);
+  useEffect(() => { document.querySelector('.sheet')?.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' }); }, [stage]);
+
+  const games = db.meta.versionGroups.filter((g) => (vgDex ? vgDex[g.id]?.length : true));
+  const gameOpts: Opt[] = [...games].reverse().map((g) => ({ value: g.id, label: g.name, group: `Generación ${GENS[g.gen - 1]}` }));
+  const inGame = useMemo(() => new Set(vgDex?.[o.vg] ?? []), [vgDex, o.vg]);
+  const set = (p: Partial<GenOptions>) => setO((x) => ({ ...x, ...p }));
+  const setVg = (vg: number) => setO((x) => ({ ...x, vg, anchors: x.anchors.filter((pid) => vgDex?.[vg]?.includes(pid)) }));
+
+  const favIn = favs.list().filter((sid) => inGame.has(sid) && !o.anchors.includes(sid)).slice(0, 12);
+  const found = q.trim().length >= 2 ? [...inGame].filter((pid) => fold(pidInfo(db, pid).name + ' ' + (pidInfo(db, pid).form ?? '')).includes(fold(q.trim())) && !o.anchors.includes(pid)).slice(0, 9) : [];
+  const addAnchor = (pid: number) => { if (o.anchors.length < 2) set({ anchors: [...o.anchors, pid] }); setQ(''); };
+
+  const run = async () => {
+    if (!vgDex || !pool) return;
+    store.set('genOpts', o);
+    setStage('busy');
+    try {
+      const [t] = await Promise.all([generateTeam(db, pool, vgDex, o), new Promise((r) => setTimeout(r, 450))]);
+      if (!t || !t.members.some(Boolean)) { setStage('error'); return; }
+      setResult(t); setStage('done');
+    } catch { setStage('error'); }
+  };
+  const teamName = () => o.purpose === 'monotipo' ? `Monotipo ${db.meta.types[o.monoType]?.[0] ?? ''}` : o.purpose === 'combates' ? 'Equipo de combate' : o.purpose === 'sorpresa' ? 'Equipo sorpresa' : 'Equipo de aventura';
+  const save = () => { if (!result) return; const t = teams.add({ ...result, name: teamName() }); nav.replace(`equipo-${t.id}`); };
+
+  const members = (result?.members.filter(Boolean) ?? []) as TeamMember[];
   return (
-    <section className="panel">
-      <div className="panel__head"><h3>Cobertura de ataques</h3><span className="pill">{covered.length} de 18</span></div>
-      {attackTypes.length === 0 ? <p className="muted">Elija movimientos de ataque para ver contra qué tipos pega súper eficaz.</p> : (
-        <>
-          <p className="muted small">Súper eficaz contra:</p>
-          <div className="badges">{covered.map((t, i) => <TypeBadge key={t} db={db} id={t} small style={{ '--i': i } as CSSProperties} />)}</div>
-          {missing.length > 0 && (
+    <div className="detail teamspage genpage">
+      <header className="dex-top dex-top--detail">
+        <div className="dex-top__inner nav-row"><BackButton onClick={() => nav.back()} /></div>
+      </header>
+      <section className="hero">
+        <div className="screen">
+          <div className="emblem emblem--teams emblem--gen"><span className="emblem__icon"><BallsIcon size={56} /></span></div>
+          <div className="hero__info">
+            <span className="hero__num">Generador</span>
+            <h2 className="hero__name">{stage === 'done' ? teamName() : 'Arme un equipo por mí'}</h2>
+            <span className="hero__genus">{stage === 'done' ? gameName(db, o.vg) : 'Conteste unas preguntas y JuasDex arma los seis con movimientos.'}</span>
+          </div>
+        </div>
+      </section>
+      <main className="body">
+        <div className="stack-gap">
+          {loadErr && <div className="empty">Diay, no se pudieron cargar los datos. ¿Tiene conexión?</div>}
+
+          {(stage === 'ask' || stage === 'error') && (
             <>
-              <p className="muted small cov-gap">Sin ataques súper eficaces contra:</p>
-              <div className="badges badges--dim">{missing.map((t, i) => <TypeBadge key={t} db={db} id={t} small style={{ '--i': i } as CSSProperties} />)}</div>
+              <div className="qblock">
+                <span className="qnum">1</span>
+                <div className="qbody">
+                  <h3>¿Para qué juego?</h3>
+                  <Picker title="Elija un juego" value={o.vg} options={gameOpts} onChange={setVg} />
+                </div>
+              </div>
+
+              <div className="qblock">
+                <span className="qnum">2</span>
+                <div className="qbody">
+                  <h3>¿Para qué es?</h3>
+                  <div className="purposes">
+                    {PURPOSES.map((p) => (
+                      <button key={p.id} className={`purpose${o.purpose === p.id ? ' is-on' : ''}`} onClick={() => set({ purpose: p.id })} aria-pressed={o.purpose === p.id}>
+                        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden><path d={p.icon} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                        <strong>{p.title}</strong>
+                        <small>{p.desc}</small>
+                      </button>
+                    ))}
+                  </div>
+                  {o.purpose === 'monotipo' && (
+                    <div className="monogrid">
+                      {ALL_T.map((t) => (
+                        <button key={t} className={`covcell t-${db.meta.types[t]?.[1]}${o.monoType === t ? ' is-on' : ' is-gap'}`} onClick={() => set({ monoType: t })} aria-pressed={o.monoType === t}>
+                          <svg viewBox="0 0 24 24" aria-hidden>{glyphPaths(db.meta.types[t]?.[1] ?? 'normal')}</svg>
+                          <span>{db.meta.types[t]?.[0]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {o.purpose === 'combates' && (
+                    <button className={`rando rando--mini${o.legends ? ' is-on' : ''}`} role="switch" aria-checked={o.legends} onClick={() => set({ legends: !o.legends })}>
+                      <span className="rando__text"><strong>Permitir legendarios</strong><small>{o.legends ? 'Pueden salir legendarios y singulares.' : 'Solo Pokémon normales.'}</small></span>
+                      <span className="rando__switch" aria-hidden><i /></span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="qblock">
+                <span className="qnum">3</span>
+                <div className="qbody">
+                  <h3>¿Alguno que no puede faltar? <small className="muted">(opcional, hasta 2)</small></h3>
+                  {o.anchors.length > 0 && (
+                    <div className="anchors">
+                      {o.anchors.map((pid) => (
+                        <button key={pid} className="anchor" onClick={() => set({ anchors: o.anchors.filter((x) => x !== pid) })} aria-label={`Quitar ${pidInfo(db, pid).name}`}>
+                          <Sprite db={db} pid={pid} size={44} /><span>{pidInfo(db, pid).name}</span><i aria-hidden>×</i>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {o.anchors.length < 2 && (
+                    <>
+                      <input className="text-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar un Pokémon de este juego…" />
+                      {found.length > 0 && <div className="minigrid">{found.map((pid) => <MiniMon key={pid} db={db} pid={pid} onClick={() => addAnchor(pid)} />)}</div>}
+                      {!q && favIn.length > 0 && (
+                        <>
+                          <p className="muted small">De sus favoritos:</p>
+                          <div className="minigrid">{favIn.map((pid) => <MiniMon key={pid} db={db} pid={pid} onClick={() => addAnchor(pid)} />)}</div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {stage === 'error' && <p className="move-slot__warn">No hubo suficientes Pokémon con esas respuestas en este juego. Pruebe otro tipo o juego.</p>}
+              <button className="big-btn big-btn--gen" disabled={!vgDex || !pool} onClick={run}>
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M12 3l2.2 5.6L20 9.3l-4.5 3.8 1.5 5.9L12 15.8 7 19l1.5-5.9L4 9.3l5.8-.7Z" fill="currentColor" /></svg>
+                {vgDex && pool ? 'Generar equipo' : 'Cargando…'}
+              </button>
             </>
           )}
-        </>
-      )}
-    </section>
+
+          {stage === 'busy' && <div className="gen-busy"><span className="gen-busy__ball" aria-hidden /><span>Armando el equipo…</span></div>}
+
+          {stage === 'done' && result && (
+            <>
+              <div className="slots">
+                {result.members.map((m, i) => m ? (
+                  <div key={`${i}-${m.pid}`} className="slot" style={{ '--i': i, ...slotColors(db, m.types) } as CSSProperties}><MemberCard db={db} m={m} /></div>
+                ) : null)}
+              </div>
+              {members.length < 6 && <p className="note">Solo se encontraron {members.length} opciones que cumplen con todo en este juego.</p>}
+              <div className="btn-row">
+                <button className="big-btn" onClick={save}>Guardar equipo</button>
+                <button className="big-btn big-btn--alt" onClick={run}>
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  Otro
+                </button>
+              </div>
+              <button className="lf__link more-link" onClick={() => setStage('ask')}>Cambiar respuestas</button>
+              <TeamAnalysis db={db} members={members} />
+              <p className="note">Después de guardarlo puede cambiar cualquier cosa: Pokémon, movimientos, objetos…</p>
+            </>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }
 

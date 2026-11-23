@@ -31,7 +31,7 @@ export default defineConfig({
       },
       workbox: {
         // La app y los sprites se guardan al instalar; los datos de cada Pokémon al abrirlos.
-        globPatterns: ['**/*.{js,css,html,svg,png,webp}', 'data/*.json'],
+        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2}', 'data/*.json'],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.includes('/data/p/'),

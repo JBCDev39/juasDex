@@ -41,6 +41,8 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const listBar = useRef<HTMLDivElement>(null);
   const anchorList = useRef(false); // si se busca/filtra desde la lista, la vista se queda en la lista
   const [edge, setEdge] = useState({ l: 0, r: 0 });
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [tabPill, setTabPill] = useState<{ left: number; width: number }>({ left: 3, width: 0 });
   const recent = store.get<number[]>('recent', []).filter((id) => id >= 1 && id <= db.index.length);
   const favList = favs.list();
   const favSet = new Set(favList);
@@ -196,6 +198,16 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   }, [pokemon, moves, abil, tab, ready]);
 
   const tabIdx = TABS.indexOf(tab);
+  // La píldora roja se mide sobre la pestaña activa (las pestañas no miden lo mismo)
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = tabsRef.current?.querySelectorAll<HTMLElement>('.seg__btn')[tabIdx];
+      if (el) setTabPill((p) => (p.left === el.offsetLeft && p.width === el.offsetWidth ? p : { left: el.offsetLeft, width: el.offsetWidth }));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [tabIdx, nq]);
   const otherHits = TABS.filter((t) => t !== tab && nq && counts[t] > 0);
   const instant = anchorList.current && (listSearch || listFilters || past);
 
@@ -305,11 +317,12 @@ export default function List({ db }: { db: Db; stamp?: number }) {
         <div ref={listTop} className="dexlist__anchor" />
         <div className="dexlist__bar" ref={listBar}>
           <div className="dexlist__row">
-            <div className="seg seg--tabs" role="tablist" style={{ '--idx': tabIdx, '--n': 3 } as CSSProperties}>
-              <span className="seg__pill" aria-hidden />
+            <div ref={tabsRef} className={`seg seg--tabs${nq ? ' has-counts' : ''}`} role="tablist">
+              <span className="seg__pill" aria-hidden style={tabPill} />
               {TABS.map((t) => (
                 <button key={t} role="tab" aria-selected={t === tab} className={`seg__btn${t === tab ? ' is-on' : ''}`} onClick={() => setTab(t)}>
-                  {TAB_LABEL[t]}{nq ? <small> {counts[t]}</small> : null}
+                  <span className="seg__label">{TAB_LABEL[t]}</span>
+                  {nq ? <small key={counts[t]} className="seg__count">{counts[t]}</small> : null}
                 </button>
               ))}
             </div>
@@ -511,7 +524,7 @@ function TypeBall({ db, selected }: { db: Db; selected: number[] }) {
     const t = window.setInterval(() => {
       if (document.hidden || document.documentElement.classList.contains('locked')) return;
       setI((x) => x + 1);
-    }, 1700);
+    }, 4200); // lento a propósito: que acompañe sin llamar la atención
     return () => window.clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pool.join()]);

@@ -39,6 +39,12 @@ export default defineConfig({
             options: { cacheName: 'juasdex-pokemon', expiration: { maxEntries: 100 } },
           },
           {
+            // Gritos: se guardan la primera vez que se escuchan
+            urlPattern: ({ url }) => url.origin === 'https://raw.githubusercontent.com' && url.pathname.startsWith('/PokeAPI/cries/'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'juasdex-gritos', expiration: { maxEntries: 400 }, cacheableResponse: { statuses: [200] } },
+          },
+          {
             urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
             handler: 'CacheFirst',
             options: { cacheName: 'juasdex-fuentes', expiration: { maxEntries: 20 } },

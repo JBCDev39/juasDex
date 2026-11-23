@@ -68,7 +68,20 @@ const vgName = Object.fromEntries(versionGroups.map((g) => [g.id, g.name]));
 const moves = {};
 for (const m of read('moves')) {
   if (+m.id > 10000) continue;
-  moves[m.id] = [moveName(m.id) || pretty(m.identifier), +m.type_id, +m.damage_class_id, num(m.power), num(m.accuracy), num(m.pp)];
+  moves[m.id] = [moveName(m.id) || pretty(m.identifier), +m.type_id, +m.damage_class_id, num(m.power), num(m.accuracy), num(m.pp), +m.generation_id];
+}
+
+// Descripción, generación y prioridad de cada movimiento
+const moveText = {};
+for (const r of read('move_flavor_text')) {
+  if (+r.language_id !== ES) continue;
+  const prev = moveText[r.move_id];
+  if (!prev || +r.version_group_id > prev.vg) moveText[r.move_id] = { vg: +r.version_group_id, t: clean(r.flavor_text) };
+}
+const moveInfo = {};
+for (const m of read('moves')) {
+  if (+m.id > 10000) continue;
+  moveInfo[m.id] = [moveText[m.id]?.t || '', +m.generation_id, +m.priority || 0];
 }
 
 // Habilidades (nombre + descripción más reciente en español)
@@ -78,10 +91,11 @@ for (const r of read('ability_flavor_text')) {
   const prev = abilityText[r.ability_id];
   if (!prev || +r.version_group_id > prev.vg) abilityText[r.ability_id] = { vg: +r.version_group_id, t: clean(r.flavor_text) };
 }
+const abilityGen = Object.fromEntries(read('abilities').map((a) => [a.id, +a.generation_id]));
 const abilities = {};
 for (const r of read('pokemon_abilities')) {
   if (abilities[r.ability_id]) continue;
-  abilities[r.ability_id] = [abilityName(r.ability_id) || `Habilidad ${r.ability_id}`, abilityText[r.ability_id]?.t || ''];
+  abilities[r.ability_id] = [abilityName(r.ability_id) || `Habilidad ${r.ability_id}`, abilityText[r.ability_id]?.t || '', abilityGen[r.ability_id] || 0];
 }
 
 // MT / MO / DT por generación de juego
@@ -314,11 +328,43 @@ for (const sid of speciesSorted) {
   };
 }
 
+// Quién aprende cada movimiento (cualquier juego) y quién tiene cada habilidad.
+// máscara: 1 nivel, 2 huevo, 4 tutor, 8 MT
+const keepPid = new Set(spriteIds.map(String));
+const learners = {};
+for (const [pid, byVg] of learn) {
+  if (!keepPid.has(pid)) continue;
+  const mask = {};
+  for (const list of Object.values(byVg)) for (const [mid, method] of list) mask[mid] = (mask[mid] || 0) | [0, 1, 2, 4, 8][method];
+  for (const [mid, m] of Object.entries(mask)) (learners[mid] ||= []).push([+pid, m]);
+}
+for (const l of Object.values(learners)) l.sort((a, b) => a[0] - b[0]);
+const holders = {};
+for (const r of read('pokemon_abilities')) {
+  if (!keepPid.has(r.pokemon_id)) continue;
+  (holders[r.ability_id] ||= []).push([+r.pokemon_id, +r.is_hidden]);
+}
+for (const l of Object.values(holders)) l.sort((a, b) => a[0] - b[0]);
+// Formas alternativas: pid -> [especie, nombre de la forma]
+const formsOut = {};
+for (const sid of speciesSorted) {
+  const s = speciesById[sid];
+  for (const p of bySpecies.get(String(sid)) || []) {
+    if (p.is_default === '1' || EXCLUDE.test(p.identifier)) continue;
+    formsOut[p.id] = [sid, varietyName(p, speciesName(sid) || pretty(s.identifier))];
+  }
+}
+fs.writeFileSync(path.join(OUT, 'move-info.json'), JSON.stringify(moveInfo));
+fs.writeFileSync(path.join(OUT, 'move-learners.json'), JSON.stringify(learners));
+fs.writeFileSync(path.join(OUT, 'ability-holders.json'), JSON.stringify(holders));
+fs.writeFileSync(path.join(OUT, 'forms.json'), JSON.stringify(formsOut));
+
 for (const [cid, data] of Object.entries(chunks)) {
   fs.writeFileSync(path.join(OUT, 'p', `${cid}.json`), JSON.stringify(data));
 }
 fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(index));
-fs.writeFileSync(path.join(OUT, 'moves.json'), JSON.stringify(moves));
+// Solo los movimientos que algún Pokémon aprende (fuera movimientos Z y Dinamax)
+fs.writeFileSync(path.join(OUT, 'moves.json'), JSON.stringify(Object.fromEntries(Object.entries(moves).filter(([mid]) => learners[mid]))));
 fs.writeFileSync(path.join(OUT, 'abilities.json'), JSON.stringify(abilities));
 fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify({
   chunk: CHUNK,

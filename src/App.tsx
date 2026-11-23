@@ -1,52 +1,55 @@
 import { useEffect, useState } from 'react';
 import { loadDb } from './data';
 import type { Db } from './types';
+import { parseRoute, type Route } from './nav';
 import List from './components/List';
-import Detail from './components/Detail';
+import Sheet from './components/Sheet';
 import { Spinner } from './components/bits';
 
-const parseHash = () => {
-  const m = location.hash.match(/^#pokemon-(\d+)$/);
-  return m ? Number(m[1]) : null;
+const valid = (db: Db, r: Route): Route => {
+  if (!r) return null;
+  if (r.kind === 'pokemon') return r.id >= 1 && r.id <= db.index.length ? r : null;
+  if (r.kind === 'mov') return db.moves[r.id] ? r : null;
+  return db.abilities[r.id] ? r : null;
 };
 
 export default function App() {
   const [db, setDb] = useState<Db | null>(null);
   const [error, setError] = useState('');
-  const [hashId, setHashId] = useState<number | null>(parseHash);
-  // La ficha es una capa encima de la lista: la lista nunca se desmonta ni se vuelve a dibujar
-  const [shownId, setShownId] = useState<number | null>(hashId);
+  const [route, setRoute] = useState<Route>(parseRoute);
+  // La capa vive encima de la lista: la lista nunca se desmonta ni se vuelve a dibujar
+  const [shown, setShown] = useState<Route>(route);
   const [closing, setClosing] = useState(false);
-  const [stamp, setStamp] = useState(0); // para que la lista refresque "Recientes" al volver
+  const [stamp, setStamp] = useState(0); // para que la lista refresque Recientes y Favoritos al volver
 
   useEffect(() => {
     loadDb().then(setDb).catch((e: Error) => setError(e.message));
-    const onHash = () => setHashId(parseHash());
+    const onHash = () => setRoute(parseRoute());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
   useEffect(() => {
-    if (hashId) { setShownId(hashId); setClosing(false); }
-    else setClosing((c) => c || shownId !== null);
+    if (route) { setShown(route); setClosing(false); }
+    else setClosing((c) => c || shown !== null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hashId]);
+  }, [route]);
 
   if (error) return <div className="center-msg">Diay, algo falló: {error}. Intente recargar.</div>;
   if (!db) return <div className="center-msg"><Spinner /> Encendiendo la JuasDex…</div>;
 
-  const valid = shownId && shownId >= 1 && shownId <= db.index.length ? shownId : null;
+  const r = valid(db, shown);
   return (
     <>
-      <div inert={Boolean(valid && !closing)}>
+      <div inert={Boolean(r && !closing)}>
         <List db={db} stamp={stamp} />
       </div>
-      {valid && (
-        <Detail
+      {r && (
+        <Sheet
           db={db}
-          id={valid}
+          route={r}
           closing={closing}
-          onClosed={() => { setShownId(null); setClosing(false); setStamp((x) => x + 1); }}
+          onClosed={() => { setShown(null); setClosing(false); setStamp((x) => x + 1); }}
         />
       )}
     </>

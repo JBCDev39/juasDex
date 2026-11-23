@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Db, EvoNode, Species, Variety } from '../types';
-import { defense, fmt, loadSpecies, pad, store } from '../data';
-import { GENS, MoveClass, Picker, REGIONS, Spinner, Sprite, TypeBadge, go, reducedMotion, type Opt } from './bits';
-import { animateSheet, flight, fly } from '../flight';
+import { defense, favs, fmt, loadSpecies, pad, store } from '../data';
+import { BackButton, Chevron, GENS, MoveClass, Picker, REGIONS, Spinner, Sprite, TypeBadge, reducedMotion, type Opt } from './bits';
+import { nav } from '../nav';
+import { playCry } from '../cry';
 
 const TABS = ['Datos', 'Debilidades', 'Movimientos', 'Ubicación'] as const;
 type Tab = (typeof TABS)[number];
@@ -20,53 +21,18 @@ const useNarrow = () => {
   return narrow;
 };
 
-export default function Detail({ db, id, closing, onClosed }: { db: Db; id: number; closing: boolean; onClosed: () => void }) {
+let shinyPref = false; // se mantiene al pasar de un Pokémon a otro
+
+export default function Detail({ db, id }: { db: Db; id: number }) {
   const narrow = useNarrow();
-  const sheet = useRef<HTMLDivElement>(null);
-  const entered = useRef(false);
-  const firstId = useRef(id);
-  const [dir] = useState(() => ({ current: '' }));
-  dir.current = document.documentElement.dataset.nav ?? '';
-
-  // Entrada: la capa sube y el sprite vuela desde la tarjeta tocada
-  useLayoutEffect(() => {
-    if (entered.current || !sheet.current) return;
-    entered.current = true;
-    const hero = sheet.current.querySelector<HTMLElement>('.hero__sprite .sprite');
-    const src = flight.id === id ? flight.el : null;
-    flight.el = null;
-    if (src && hero) void fly(src, hero, 440);
-    void animateSheet(sheet.current, 'in');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Mientras la ficha está abierta, la página de atrás no se mueve
-  useEffect(() => {
-    document.documentElement.classList.add('locked');
-    return () => document.documentElement.classList.remove('locked');
-  }, []);
-
-  // Salida: la capa baja y el sprite vuelve a su tarjeta (si está a la vista)
-  useLayoutEffect(() => {
-    if (!closing || !sheet.current) return;
-    document.documentElement.classList.remove('locked');
-    const hero = sheet.current.querySelector<HTMLElement>('.hero__sprite .sprite');
-    const card = document.querySelector<HTMLElement>(`[data-card="${id}"] .sprite`);
-    const jobs: Promise<void>[] = [animateSheet(sheet.current, 'out')];
-    if (hero && card) jobs.push(fly(hero, card, 400));
-    void Promise.all(jobs).then(onClosed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closing]);
-
-  const back = () => {
-    if (flight.fromList) { flight.fromList = false; history.back(); }
-    else go('', '', true);
-  };
   const [sp, setSp] = useState<Species | null>(null);
   const [failed, setFailed] = useState(false);
   const [vi, setVi] = useState(0);
-  const [shiny, setShiny] = useState(false);
+  const [shiny, setShinyState] = useState(shinyPref);
+  const setShiny = (f: (s: boolean) => boolean) => setShinyState((s) => (shinyPref = f(s)));
   const [hop, setHop] = useState(0);
+  const [fav, setFav] = useState(() => favs.has(id));
+  const [cry, setCry] = useState<'' | 'playing' | 'error'>('');
   const [tab, setTab] = useState<Tab>(() => {
     const t = store.get<string>('tab', 'Datos');
     return (TABS as readonly string[]).includes(t) ? (t as Tab) : 'Datos';
@@ -75,21 +41,26 @@ export default function Detail({ db, id, closing, onClosed }: { db: Db; id: numb
 
   useEffect(() => {
     let alive = true;
-    setFailed(false);
-    setVi(0);
     loadSpecies(id, db.meta.chunk).then((s) => alive && setSp(s)).catch(() => alive && setFailed(true));
-    if (id !== firstId.current && sheet.current) sheet.current.scrollTop = 0;
-    firstId.current = -1;
     store.set('last', id);
     store.set('recent', [id, ...store.get<number[]>('recent', []).filter((x) => x !== id)].slice(0, 5));
     return () => { alive = false; };
   }, [db, id]);
 
+  const back = () => nav.back();
+  const playIt = (pid: number) => {
+    setHop((h) => h + 1);
+    setCry('playing');
+    playCry(pid)
+      .then((a) => { a.onended = () => setCry((c) => (c === 'playing' ? '' : c)); })
+      .catch(() => { setCry('error'); window.setTimeout(() => setCry(''), 2400); });
+  };
+
   const chooseTab = (t: Tab) => { setTab(t); store.set('tab', t); };
   const total = db.index.length;
-  // Anterior/siguiente reemplazan el historial: "atrás" siempre regresa a la lista
-  const prev = () => id > 1 && go(`pokemon-${id - 1}`, 'prev', true);
-  const next = () => id < total && go(`pokemon-${id + 1}`, 'next', true);
+  // Anterior/siguiente reemplazan la pantalla: "atrás" regresa a donde estaba antes
+  const prev = () => id > 1 && nav.replace(`pokemon-${id - 1}`, 'prev');
+  const next = () => id < total && nav.replace(`pokemon-${id + 1}`, 'next');
 
   // Teclado: flechas para cambiar de Pokémon
   useEffect(() => {
@@ -109,13 +80,10 @@ export default function Detail({ db, id, closing, onClosed }: { db: Db; id: numb
   const tags = sp?.id === id ? [sp.legendary && 'Legendario', sp.mythical && 'Singular', sp.baby && 'Bebé'].filter(Boolean) as string[] : [];
 
   return (
-    <div ref={sheet} className={`sheet detail t-bg-${ident(db, types[0])}`} role="dialog" aria-modal="true" aria-label={entry[1]}>
+    <div className={`detail t-bg-${ident(db, types[0])}`} aria-label={entry[1]}>
       <header className="dex-top dex-top--detail">
         <div className="dex-top__inner nav-row">
-          <button className="nav-btn" onClick={back} aria-label="Volver">
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            <span>JuasDex</span>
-          </button>
+          <BackButton onClick={back} />
           <div className="nav-arrows">
             <button className="nav-btn" disabled={id <= 1} onClick={prev} aria-label="Anterior">
               <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -127,7 +95,6 @@ export default function Detail({ db, id, closing, onClosed }: { db: Db; id: numb
         </div>
       </header>
 
-      <div key={id} className={`sheet__content from-${entered.current ? dir.current || 'none' : 'start'}`}>
       <section
         className="hero"
         onTouchStart={(e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
@@ -159,9 +126,29 @@ export default function Detail({ db, id, closing, onClosed }: { db: Db; id: numb
             >
               <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d="M12 2l2.2 6.6L21 11l-6.8 2.4L12 20l-2.2-6.6L3 11l6.8-2.4Z" fill="currentColor" /><path d="M19 2l.8 2.2L22 5l-2.2.8L19 8l-.8-2.2L16 5l2.2-.8Z" fill="currentColor" /></svg>
             </button>
+            <button
+              type="button"
+              className={`cry-btn${cry ? ` is-${cry}` : ''}`}
+              aria-label="Escuchar su grito"
+              title="Grito"
+              onClick={() => playIt(v?.pid ?? id)}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4Z" fill="currentColor" /><path className="wave w1" d="M15.5 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /><path className="wave w2" d="M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
+            </button>
+            {cry === 'error' && <span className="cry-msg">Sin conexión para el grito</span>}
             {shiny && <span key={`b${vi}${id}`} className="burst" aria-hidden><i /><i /><i /><i /><i /><i /></span>}
           </div>
           <div className="hero__info">
+            <button
+              type="button"
+              className={`fav-btn${fav ? ' is-on' : ''}`}
+              aria-pressed={fav}
+              aria-label={fav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+              onClick={() => setFav(favs.toggle(id))}
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z" fill={fav ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>
+              {fav && <span key="b" className="fav-burst" aria-hidden><i /><i /><i /><i /><i /></span>}
+            </button>
             <span className="hero__num">#{pad(id)}</span>
             <h2 className="hero__name">{v && vi > 0 ? v.name : entry[1]}</h2>
             {vi > 0 && <span className="hero__form">{entry[1]}</span>}
@@ -195,7 +182,6 @@ export default function Detail({ db, id, closing, onClosed }: { db: Db; id: numb
           </div>
         )}
       </main>
-      </div>
     </div>
   );
 }
@@ -279,11 +265,14 @@ function Info({ db, sp, v }: { db: Db; sp: Species; v: Variety }) {
             const a = db.abilities[aid];
             return (
               <li key={aid} className={hidden ? 'is-hidden' : ''} style={{ '--i': i } as CSSProperties}>
-                <div className="abilities__top">
-                  <strong>{a?.[0] ?? '¿?'}</strong>
-                  {hidden ? <span className="hidden-tag">Oculta</span> : null}
-                </div>
-                {a?.[1] && <p>{a[1]}</p>}
+                <button type="button" className="abilities__btn" onClick={() => nav.push(`hab-${aid}`)}>
+                  <div className="abilities__top">
+                    <strong>{a?.[0] ?? '¿?'}</strong>
+                    {hidden ? <span className="hidden-tag">Oculta</span> : null}
+                    <Chevron />
+                  </div>
+                  {a?.[1] && <p>{a[1]}</p>}
+                </button>
               </li>
             );
           })}
@@ -452,7 +441,7 @@ function Arrow({ down }: { down?: boolean }) {
 function EvoCard({ db, id, current, i, how }: { db: Db; id: number; current: number; i: number; how?: string[] }) {
   const e = db.index[id - 1];
   return (
-    <button className={`evo__card${id === current ? ' is-on' : ''}`} style={{ '--i': Math.min(i, 10) } as CSSProperties} onClick={() => id !== current && go(`pokemon-${id}`, '', true)}>
+    <button className={`evo__card${id === current ? ' is-on' : ''}`} style={{ '--i': Math.min(i, 10) } as CSSProperties} onClick={() => id !== current && nav.replace(`pokemon-${id}`)}>
       <Sprite db={db} pid={id} size={60} />
       <span className="evo__name">{e?.[1]}</span>
       <span className="evo__types">{e?.[2].map((t) => <i key={t} className={`dot t-${ident(db, t)}`} />)}</span>
@@ -523,7 +512,7 @@ function Moves({ db, v }: { db: Db; v: Variety }) {
           if (!m) return null;
           const lvl = active === 1 ? (extra === 0 ? 'Evo' : extra) : active === 4 ? extra : '';
           return (
-            <div key={`${mid}-${i}`} className={`move t-${ident(db, m[1])}`} style={{ '--i': Math.min(i, 16) } as CSSProperties}>
+            <button type="button" key={`${mid}-${i}`} className={`move t-${ident(db, m[1])}`} style={{ '--i': Math.min(i, 16) } as CSSProperties} onClick={() => nav.push(`mov-${mid}`)}>
               <span className="move__lvl">{lvl}</span>
               <span className="move__name">
                 <strong>{m[0]}</strong>
@@ -532,7 +521,7 @@ function Moves({ db, v }: { db: Db; v: Variety }) {
               <span className="move__n">{m[3] ?? '—'}</span>
               <span className="move__n">{m[4] ?? '—'}</span>
               <span className="move__n">{m[5] ?? '—'}</span>
-            </div>
+            </button>
           );
         })}
       </div>

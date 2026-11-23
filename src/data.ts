@@ -1,4 +1,4 @@
-import type { Db, Species } from './types';
+import type { Db, MoveInfo, Species } from './types';
 
 const getJson = async <T,>(path: string): Promise<T> => {
   const res = await fetch(path);
@@ -7,14 +7,15 @@ const getJson = async <T,>(path: string): Promise<T> => {
 };
 
 export const loadDb = async (): Promise<Db> => {
-  const [index, meta, moves, abilities, sprites] = await Promise.all([
+  const [index, meta, moves, abilities, sprites, forms] = await Promise.all([
     getJson<Db['index']>('data/index.json'),
     getJson<Db['meta']>('data/meta.json'),
     getJson<Db['moves']>('data/moves.json'),
     getJson<Db['abilities']>('data/abilities.json'),
     getJson<Db['sprites']>('data/sprite-map.json'),
+    getJson<Db['forms']>('data/forms.json'),
   ]);
-  return { index, meta, moves, abilities, sprites };
+  return { index, meta, moves, abilities, sprites, forms };
 };
 
 const chunks = new Map<number, Promise<Record<string, Species>>>();
@@ -28,6 +29,24 @@ export const loadSpecies = async (id: number, chunkSize: number): Promise<Specie
   }
   const data = await chunks.get(c)!;
   return data[id];
+};
+
+/** Datos que solo se cargan al abrir un movimiento o una habilidad */
+let moveExtra: Promise<{ info: Record<string, MoveInfo>; learners: Record<string, [number, number][]> }> | null = null;
+export const loadMoveExtra = () => (moveExtra ??= Promise.all([
+  getJson<Record<string, MoveInfo>>('data/move-info.json'),
+  getJson<Record<string, [number, number][]>>('data/move-learners.json'),
+]).then(([info, learners]) => ({ info, learners })).catch((e) => { moveExtra = null; throw e; }));
+
+let holders: Promise<Record<string, [number, number][]>> | null = null;
+export const loadHolders = () => (holders ??= getJson<Record<string, [number, number][]>>('data/ability-holders.json')
+  .catch((e) => { holders = null; throw e; }));
+
+/** Nombre y especie de cualquier Pokémon o forma */
+export const pidInfo = (db: Db, pid: number): { species: number; name: string; form?: string } => {
+  const f = db.forms[pid];
+  if (f) return { species: f[0], name: db.index[f[0] - 1]?.[1] ?? '', form: f[1] };
+  return { species: pid, name: db.index[pid - 1]?.[1] ?? '' };
 };
 
 /** Multiplicador de daño que recibe una combinación de tipos */
@@ -51,5 +70,17 @@ export const store = {
   },
   set(k: string, v: unknown) {
     try { localStorage.setItem('juasdex:' + k, JSON.stringify(v)); } catch { /* sin almacenamiento */ }
+  },
+};
+
+/* Favoritos: se guardan en este aparato */
+export const favs = {
+  list: () => store.get<number[]>('favs', []),
+  has: (id: number) => favs.list().includes(id),
+  toggle(id: number) {
+    const l = favs.list();
+    const next = l.includes(id) ? l.filter((x) => x !== id) : [...l, id].sort((a, b) => a - b);
+    store.set('favs', next);
+    return next.includes(id);
   },
 };

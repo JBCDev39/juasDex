@@ -3,11 +3,14 @@
 /** [id, nombre, tipos, generación] */
 export type IndexEntry = [number, string, number[], number];
 
-/** [nombre, tipo, clase (1 estado, 2 físico, 3 especial), potencia, precisión, PP] */
-export type Move = [string, number, number, number | null, number | null, number | null];
+/** [nombre, tipo, clase (1 estado, 2 físico, 3 especial), potencia, precisión, PP, generación] */
+export type Move = [string, number, number, number | null, number | null, number | null, number];
 
-/** [nombre, descripción] */
-export type Ability = [string, string];
+/** [nombre, descripción, generación] */
+export type Ability = [string, string, number];
+
+/** [descripción, generación, prioridad] */
+export type MoveInfo = [string, number, number];
 
 /** [movimiento, método (1 nivel, 2 huevo, 3 tutor, 4 MT), nivel o etiqueta MT] */
 export type Learn = [number, number, number | string];
@@ -66,4 +69,6 @@ export interface Db {
   moves: Record<string, Move>;
   abilities: Record<string, Ability>;
   sprites: Record<string, [number, number]>;
+  /** formas alternativas: pid -> [especie, nombre de la forma] */
+  forms: Record<string, [number, string]>;
 }

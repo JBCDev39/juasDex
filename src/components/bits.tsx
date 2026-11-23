@@ -53,12 +53,36 @@ export function Ball({ className, size = 24 }: { className?: string; size?: numb
 
 export const Spinner = () => <Ball className="spin-ball" size={28} />;
 
-/** Navega por el hash. dir = dirección de deslizamiento; replace = no apilar en el historial */
-export const go = (hash: string, dir: 'next' | 'prev' | '' = '', replace = false) => {
-  document.documentElement.dataset.nav = dir;
-  if (replace) location.replace(`#${hash}`);
-  else location.hash = hash;
-};
+/** Botón de volver de la barra roja: dice "JuasDex" si atrás está la lista, "Atrás" si hay otra pantalla */
+export function BackButton({ onClick }: { onClick: () => void }) {
+  const deep = (history.state as { d?: number } | null)?.d ?? 0;
+  return (
+    <button className="nav-btn" onClick={onClick} aria-label="Volver">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      <span>{deep > 1 ? 'Atrás' : 'JuasDex'}</span>
+    </button>
+  );
+}
+
+export const Chevron = () => (
+  <svg className="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+
+/** Tarjetita de Pokémon (para listas de quién aprende un movimiento o tiene una habilidad) */
+export function MiniMon({ db, pid, tag, onClick }: { db: Db; pid: number; tag?: ReactNode; onClick: () => void }) {
+  const f = db.forms[pid];
+  const species = f ? f[0] : pid;
+  const e = db.index[species - 1];
+  if (!e) return null;
+  return (
+    <button type="button" className={`mini t-${db.meta.types[e[2][0]]?.[1] ?? 'normal'}`} onClick={onClick}>
+      <Sprite db={db} pid={pid} size={56} fallback={species} />
+      <span className="mini__name">{e[1]}</span>
+      {f && <span className="mini__form">{f[1]}</span>}
+      {tag && <span className="mini__tag">{tag}</span>}
+    </button>
+  );
+}
 
 export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 

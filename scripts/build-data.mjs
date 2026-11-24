@@ -419,7 +419,7 @@ for (const l of Object.values(vgDex)) l.sort((a, b) => a - b);
 fs.writeFileSync(path.join(OUT, 'vg-dex.json'), JSON.stringify(vgDex));
 
 // ---------- Datos para el generador de equipos ----------
-// pid -> [total, [ps, atq, def, atesp, defesp, vel], evolución final (1/0), 0 normal | 1 legendario | 2 singular, especial (mega/primigenio/etc.) (1/0)]
+// pid -> [total, [ps, atq, def, atesp, defesp, vel], evolución final (1/0), 0 normal | 1 legendario | 2 singular, especial (mega/primigenio/etc.) (1/0), habilidades [[id, oculta]]]
 {
   const pool = {};
   const SPECIAL = /-(mega|primal|ash|hero|battle-bond|totem|starter|cap|cosplay|rock-star|belle|pop-star|phd|libre|gmax|eternal|own-tempo|eternamax|ultra|crowned|origin|sunshine|busted|hangry|zen|school|blade|pirouette|noice|complete|10|50|power-construct|dada|gulping|gorging|stellar|terastal|white-striped)/;
@@ -431,7 +431,8 @@ fs.writeFileSync(path.join(OUT, 'vg-dex.json'), JSON.stringify(vgDex));
     if (stats.length !== 6) continue;
     const final = children.get(String(p.species_id)) ? 0 : 1;
     const legend = s.is_mythical === '1' ? 2 : s.is_legendary === '1' ? 1 : 0;
-    pool[pid] = [stats.reduce((a, b) => a + b, 0), stats, final, legend, p.is_default !== '1' && SPECIAL.test(p.identifier) ? 1 : 0];
+    const abil = (pAbil.get(p.id) || []).sort((a, b) => +a.slot - +b.slot).map((x) => [+x.ability_id, +x.is_hidden]);
+    pool[pid] = [stats.reduce((a, b) => a + b, 0), stats, final, legend, p.is_default !== '1' && SPECIAL.test(p.identifier) ? 1 : 0, abil];
   }
   fs.writeFileSync(path.join(OUT, 'pool.json'), JSON.stringify(pool));
 }

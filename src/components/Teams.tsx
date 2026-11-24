@@ -586,7 +586,7 @@ const gradeOf = (bad: number, steps: number[]) => ['A', 'B', 'C', 'D', 'F'][step
 const mxLabel = (x: number) => (x === 4 ? '×4' : x === 2 ? '×2' : '');
 
 function analyze(db: Db, members: TeamMember[], pool: Pool | null) {
-  const defs = members.map((m) => defense(db, m.types));
+  const defs = members.map((m) => defense(db, m.types, m.abil));
   const name = (m: TeamMember) => pidInfo(db, m.pid).name;
   const rows = ALL_T.map((t) => {
     const mults = defs.map((d) => d[t] ?? 1);
@@ -713,7 +713,7 @@ function TeamAnalysis({ db, members }: { db: Db; members: TeamMember[] }) {
                 </div>
               ))}
             </div>
-            <p className="note">×2 o más en rojo, resistencias en verde, inmunidad en gris. No toma en cuenta habilidades.</p>
+            <p className="note">×2 o más en rojo, resistencias en verde, inmunidad en gris. Incluye habilidades como Levitación o Absorbe Agua.</p>
           </>
         )}
       </section>
@@ -762,6 +762,19 @@ const PURPOSES: { id: Purpose; title: string; desc: string; icon: string }[] = [
   { id: 'sorpresa', title: 'Sorpréndame', desc: 'Al azar, pero con sentido. Para salir de la rutina.', icon: 'M12 3v4m0 10v4M3 12h4m10 0h4M6 6l2.5 2.5m7 7L18 18m0-12-2.5 2.5m-7 7L6 18' },
 ];
 
+const THINKING = ['Revisando debilidades…', 'Buscando cobertura…', 'Balanceando físicos y especiales…', 'Eligiendo movimientos…'];
+function GenBusy() {
+  const [i, setI] = useState(0);
+  useEffect(() => { const t = setInterval(() => setI((x) => Math.min(x + 1, THINKING.length - 1)), 380); return () => clearInterval(t); }, []);
+  return (
+    <div className="gen-busy" role="status">
+      <span className="gen-busy__ball" aria-hidden />
+      <span key={i} className="gen-busy__text">{THINKING[i]}</span>
+      <span className="gen-busy__steps" aria-hidden>{THINKING.map((_, k) => <i key={k} className={k <= i ? 'on' : ''} />)}</span>
+    </div>
+  );
+}
+
 export function GenPage({ db }: { db: Db }) {
   const [vgDex, setVgDex] = useState<Record<string, number[]> | null>(null);
   const [pool, setPool] = useState<Pool | null>(null);
@@ -790,7 +803,8 @@ export function GenPage({ db }: { db: Db }) {
     store.set('genOpts', o);
     setStage('busy');
     try {
-      const [t] = await Promise.all([generateTeam(db, pool, vgDex, o), new Promise((r) => setTimeout(r, 450))]);
+      const avoid = (result?.members.filter(Boolean) as TeamMember[] | undefined)?.map((m) => m.pid) ?? [];
+      const [t] = await Promise.all([generateTeam(db, pool, vgDex, o, avoid), new Promise((r) => setTimeout(r, reducedMotion() ? 300 : 1500))]);
       if (!t || !t.members.some(Boolean)) { setStage('error'); return; }
       setResult(t); setStage('done');
     } catch { setStage('error'); }
@@ -896,7 +910,7 @@ export function GenPage({ db }: { db: Db }) {
             </>
           )}
 
-          {stage === 'busy' && <div className="gen-busy"><span className="gen-busy__ball" aria-hidden /><span>Armando el equipo…</span></div>}
+          {stage === 'busy' && <GenBusy />}
 
           {stage === 'done' && result && (
             <>
@@ -905,6 +919,7 @@ export function GenPage({ db }: { db: Db }) {
                   <div key={`${i}-${m.pid}`} className="slot" style={{ '--i': i, ...slotColors(db, m.types) } as CSSProperties}><MemberCard db={db} m={m} /></div>
                 ) : null)}
               </div>
+              {o.purpose === 'monotipo' && <p className="note">En un monotipo todos comparten debilidades, así que la nota de defensa siempre sale baja: esa es la gracia del reto. JuasDex elige los que mejor tapan esos huecos.</p>}
               {members.length < 6 && <p className="note">Solo se encontraron {members.length} opciones que cumplen con todo en este juego.</p>}
               <div className="btn-row">
                 <button className="big-btn" onClick={save}>Guardar equipo</button>

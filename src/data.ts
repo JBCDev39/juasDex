@@ -1,3 +1,4 @@
+import { abilMult } from './abilityfx';
 import type { Db, MoveInfo, Species, Team } from './types';
 
 const getJson = async <T,>(path: string): Promise<T> => {
@@ -56,12 +57,12 @@ export const pidInfo = (db: Db, pid: number): { species: number; name: string; f
 };
 
 /** Multiplicador de daño que recibe una combinación de tipos */
-export const defense = (db: Db, defTypes: number[]) => {
+export const defense = (db: Db, defTypes: number[], abil?: number) => {
   const out: Record<number, number> = {};
   for (const atk of Object.keys(db.meta.types)) {
     let f = 1;
     for (const d of defTypes) f *= db.meta.chart[atk]?.[d] ?? 1;
-    out[+atk] = f;
+    out[+atk] = abilMult(abil, +atk, f);
   }
   return out;
 };

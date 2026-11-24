@@ -48,7 +48,16 @@ const speciesNameRows = read('pokemon_species_names');
 const speciesName = namesOf(speciesNameRows, 'pokemon_species_id');
 const genusEs = new Map(speciesNameRows.filter((r) => +r.local_language_id === ES && r.genus).map((r) => [r.pokemon_species_id, r.genus]));
 const genus = (id) => genusEs.get(String(id)) || '';
-const locNameEs = namesOf(read('location_names'), 'location_id');
+// Nombres de lugares: español de PokéAPI; si no hay, el nombre oficial en español de PKHeX (raw/place-names-es.json)
+const locNamesRaw = namesOf(read('location_names'), 'location_id');
+const placeEs = fs.existsSync(path.join(path.dirname(SRC), 'place-names-es.json')) ? JSON.parse(fs.readFileSync(path.join(path.dirname(SRC), 'place-names-es.json'), 'utf8')) : {};
+const PLACE_FIX = { 'Lost Tower': 'Torre Perdida', 'Kanto Power Plant': 'Central Energía', 'Altering Cave': 'Cueva Alterna', 'Nature Sanctuary': 'Santuario Natural' };
+const locHasEs = new Set(read('location_names').filter((r) => +r.local_language_id === ES).map((r) => r.location_id));
+const locNameEs = (id) => {
+  const n = locNamesRaw(id);
+  if (!n || locHasEs.has(String(id))) return n;
+  return placeEs[n.toLowerCase()] || PLACE_FIX[n] || n.replace(/^Sea Route (\d+)/, 'Ruta $1');
+};
 const eggName = namesOf(read('egg_group_prose'), 'egg_group_id');
 const versionName = namesOf(read('version_names'), 'version_id');
 
@@ -112,11 +121,45 @@ for (const r of read('machines')) {
 const locIdent = Object.fromEntries(read('locations').map((l) => [l.id, l.identifier]));
 const areas = Object.fromEntries(read('location_areas').map((a) => [a.id, a]));
 const routeEs = (s) => s.replace(/^Route (\d+)/, 'Ruta $1').replace(/ Route (\d+)/, ' Ruta $1');
+// Sub-zonas ("north-towards-floaroma-town", "b1f"…) al español
+const AREA_WORDS = { area: 'zona', room: 'sala', south: 'sur', north: 'norte', west: 'oeste', east: 'este', main: 'principal', hidden: 'oculta', grotto: 'gruta',
+  outside: 'exterior', exterior: 'exterior', inside: 'interior', interior: 'interior', cave: 'cueva', entrance: 'entrada', exit: 'salida', house: 'casa', center: 'centro', gate: 'puerta',
+  forest: 'bosque', outer: 'exterior', inner: 'interior', left: 'izquierda', right: 'derecha', middle: 'centro', top: 'cima', summit: 'cima', underwater: 'bajo el agua', roof: 'techo',
+  deep: 'profundo', island: 'isla', unknown: 'desconocida', back: 'fondo', front: 'frente', upper: 'superior', lower: 'inferior', basement: 'sótano', floor: 'piso', side: 'lado',
+  of: 'de', the: '', and: 'y', near: 'cerca de', towards: 'hacia', to: 'a', route: 'Ruta', city: 'Ciudad', town: 'Pueblo', sea: 'mar', day: 'de día', night: 'de noche', morning: 'mañana',
+  spring: 'primavera', summer: 'verano', autumn: 'otoño', winter: 'invierno', before: 'antes de', after: 'después de', ultra: 'ultra', space: 'espacio', wilds: 'salvaje', den: 'guarida', max: 'Dinamax', different: 'distinto', caught: 'capturado' };
+const areaEs = (id) => {
+  const fl = id.match(/^(b?)(\d+)f$/) || id.match(/^bf(\d+)$/);
+  if (fl) return fl.length === 3 ? (fl[1] ? `sótano ${fl[2]}` : `piso ${fl[2]}`) : `sótano ${fl[1]}`;
+  const out = [];
+  const parts = id.split('-');
+  for (let i = 0; i < parts.length; i++) {
+    const w = parts[i];
+    // Nombre de un lugar dentro de la sub-zona ("blackthorn-city-entrance" -> "Ciudad Endrino")
+    let found = 0;
+    for (let j = parts.length; j > i + 1; j--) { const es = placeEs[parts.slice(i, j).join(' ')]; if (es) { out.push(es); found = j; break; } }
+    if (found) { i = found - 1; continue; }
+    const f2 = w.match(/^(b?)(\d+)f$/);
+    if (f2) { out.push(f2[1] ? `sótano ${f2[2]}` : `piso ${f2[2]}`); continue; }
+    // "towards floaroma town" -> buscar el nombre del lugar completo en español
+    if (w === 'towards' || w === 'near' || w === 'of') {
+      const rest = parts.slice(i + 1).join(' ');
+      const es = placeEs[rest] || placeEs[pretty(parts.slice(i + 1).join('-')).toLowerCase()];
+      if (es) { out.push(AREA_WORDS[w], es); break; }
+    }
+    out.push(AREA_WORDS[w] ?? (w.length === 1 ? w.toUpperCase() : pretty(w)));
+  }
+  let words = out.filter(Boolean);
+  // "Ciudad Endrino entrada" -> "entrada de Ciudad Endrino"
+  if (words.length > 1 && ['entrada', 'salida', 'interior', 'exterior'].includes(words[words.length - 1])) words = [words.pop(), 'de', ...words];
+  const t = words.join(' ').replace(/^(norte|sur|este|oeste) hacia/, '$1, hacia').replace(/^Dinamax guarida/, 'guarida Dinamax');
+  return t.charAt(0).toLowerCase() === t.charAt(0) ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+};
 const areaLabel = (areaId) => {
   const a = areas[areaId];
   if (!a) return '¿?';
   const base = routeEs(locNameEs(a.location_id) || pretty(locIdent[a.location_id] || 'desconocido'));
-  return a.identifier ? `${base} (${pretty(a.identifier)})` : base;
+  return a.identifier ? `${base} (${areaEs(a.identifier)})` : base;
 };
 const slots = Object.fromEntries(read('encounter_slots').map((s) => [s.id, s]));
 const METHOD_ES = {
@@ -145,6 +188,31 @@ for (const e of read('encounters')) {
   const cur = m.get(key);
   if (!cur) m.set(key, [areaLabel(e.location_area_id), METHOD_ES[method] || 'Otro', +e.min_level, +e.max_level, rarity]);
   else { cur[2] = Math.min(cur[2], +e.min_level); cur[3] = Math.max(cur[3], +e.max_level); cur[4] += rarity; }
+}
+// Juegos que PokéAPI no trae (DBPR, Leyendas Arceus, Escarlata/Púrpura, Z-A): datos de PKHeX
+// generados con scripts/build-pkhex-enc.py. La forma se traduce al Pokémon según el orden de sus variedades.
+{
+  const file = path.join(path.dirname(SRC), 'pkhex-enc.json');
+  if (fs.existsSync(file)) {
+    const varsOf = new Map();
+    for (const p of read('pokemon')) {
+      if (!varsOf.has(p.species_id)) varsOf.set(p.species_id, []);
+      varsOf.get(p.species_id).push(+p.id);
+    }
+    for (const list of varsOf.values()) list.sort((a, b) => a - b);
+    for (const [v, sp, form, place, method, lo, hi] of JSON.parse(fs.readFileSync(file, 'utf8'))) {
+      const list = varsOf.get(String(sp));
+      if (!list) continue;
+      const pid = String(list[form] ?? list[0]);
+      let byV = encByPokemon.get(pid);
+      if (!byV) encByPokemon.set(pid, (byV = {}));
+      const m = (byV[v] ||= new Map());
+      const key = `${place}|${method}`;
+      const cur = m.get(key);
+      if (!cur) m.set(key, [place, method, lo, hi, 0]);
+      else { cur[2] = Math.min(cur[2], lo); cur[3] = Math.max(cur[3], hi); }
+    }
+  }
 }
 const encVersions = new Set();
 for (const byV of encByPokemon.values()) for (const v of Object.keys(byV)) encVersions.add(+v);

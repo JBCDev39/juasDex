@@ -542,11 +542,12 @@ function Moves({ db, v }: { db: Db; v: Variety }) {
 }
 
 /* ---------- Ubicación ---------- */
-const NO_DATA = 'Diamante Brillante / Perla Reluciente, Leyendas: Arceus, Escarlata / Púrpura y Leyendas: Z-A';
 function Where({ db, v }: { db: Db; v: Variety }) {
   const order = new Map(db.meta.versionGroups.map((g, i) => [g.id, i]));
+  // Los DLC sin grupo propio (Isla de la Armadura, Corona Nevada…) van junto al juego anterior
+  const rank = (vg: number) => order.get(vg) ?? Math.max(-1, ...db.meta.versionGroups.filter((g) => g.id < vg).map((g) => order.get(g.id) ?? -1)) + 0.5;
   const vers = Object.keys(v.enc).map(Number)
-    .sort((a, b) => (order.get(db.meta.versions[a][1]) ?? 99) - (order.get(db.meta.versions[b][1]) ?? 99) || a - b);
+    .sort((a, b) => rank(db.meta.versions[a][1]) - rank(db.meta.versions[b][1]) || a - b);
   const [ver, setVer] = useState<number>(() => store.get('ver', 0));
   const current = vers.includes(ver) ? ver : vers[vers.length - 1];
   const genOf = (x: number) => db.meta.versionGroups.find((g) => g.id === db.meta.versions[x][1])?.gen ?? 1;
@@ -581,7 +582,10 @@ function Where({ db, v }: { db: Db; v: Variety }) {
           </ul>
         </>
       )}
-      <p className="note">Todavía no hay datos de ubicación para {NO_DATA}. Algunos lugares aparecen con su nombre en inglés.</p>
+      <p className="note">
+        Los lugares de Diamante Brillante, Perla Reluciente, Leyendas: Arceus, Escarlata, Púrpura y Leyendas: Z-A vienen de los datos del proyecto PKHeX.
+        En Escarlata y Púrpura los Pokémon aparecen por zonas y el nivel cambia según la zona. Unos pocos lugares de juegos viejos siguen con su nombre en inglés.
+      </p>
     </div>
   );
 }

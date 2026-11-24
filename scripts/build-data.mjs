@@ -513,6 +513,58 @@ fs.writeFileSync(path.join(OUT, 'vg-dex.json'), JSON.stringify(vgDex));
   fs.writeFileSync(path.join(OUT, 'story.json'), JSON.stringify(story));
 }
 
+// Pokédex por juego: [{ vg, name, n: [[número regional, especie], ...] }] en el orden de los juegos
+{
+  const dexName = namesOf(read('pokedex_prose'), 'pokedex_id');
+  const SKIP = new Set([1, 11, 17, 18, 19, 20, 22, 23, 24, 25, 36]); // nacional, Conquest, islas de Alola por separado, Champions
+  const dexNums = new Map();
+  for (const r of read('pokemon_dex_numbers')) {
+    if (!dexNums.has(r.pokedex_id)) dexNums.set(r.pokedex_id, []);
+    dexNums.get(r.pokedex_id).push([+r.pokedex_number, +r.species_id]);
+  }
+  const byVg = new Map();
+  for (const r of read('pokedex_version_groups')) {
+    if (SKIP.has(+r.pokedex_id)) continue;
+    if (!byVg.has(r.version_group_id)) byVg.set(r.version_group_id, []);
+    byVg.get(r.version_group_id).push(+r.pokedex_id);
+  }
+  const dexes = [];
+  const seenDex = new Set();
+  const PARENT = { 21: 20, 22: 20, 26: 25, 27: 25 }; // DLC sin grupo propio -> su juego
+  for (const [vg, list] of [...byVg]) if (PARENT[vg]) { const p = String(PARENT[vg]); byVg.set(p, [...new Set([...(byVg.get(p) || []), ...list])]); }
+  for (const g of versionGroups) {
+    const ids = (byVg.get(String(g.id)) || []).sort((a, b) => a - b);
+    for (const d of ids) {
+      const n = (dexNums.get(String(d)) || []).sort((a, b) => a[0] - b[0]);
+      if (!n.length || seenDex.has(d)) continue;
+      seenDex.add(d);
+      dexes.push({ vg: g.id, name: ids.length > 1 ? `${g.name} · ${dexName(d)}` : g.name, n });
+    }
+  }
+  fs.writeFileSync(path.join(OUT, 'dexes.json'), JSON.stringify(dexes));
+}
+
+// Lugares por juego (al revés): places/{versión}.json = [[lugar, [[pid, método, nivel mín, nivel máx, %], ...]], ...]
+{
+  const byVersion = {};
+  for (const [pid, byV] of encByPokemon) {
+    if (!keepPid.has(String(pid))) continue;
+    for (const [v, m] of Object.entries(byV)) {
+      const places = (byVersion[v] ||= new Map());
+      for (const [place, method, lo, hi, rate] of m.values()) {
+        if (!places.has(place)) places.set(place, []);
+        places.get(place).push([+pid, method, lo, hi, rate]);
+      }
+    }
+  }
+  fs.mkdirSync(path.join(OUT, 'places'), { recursive: true });
+  for (const [v, places] of Object.entries(byVersion)) {
+    const out = [...places].sort((a, b) => a[0].localeCompare(b[0], 'es', { numeric: true }))
+      .map(([place, rows]) => [place, rows.sort((a, b) => a[1].localeCompare(b[1], 'es') || a[2] - b[2] || a[0] - b[0])]);
+    fs.writeFileSync(path.join(OUT, 'places', `${v}.json`), JSON.stringify(out));
+  }
+}
+
 // ---------- Datos para el generador de equipos ----------
 // pid -> [total, [ps, atq, def, atesp, defesp, vel], evolución final (1/0), 0 normal | 1 legendario | 2 singular, especial (mega/primigenio/etc.) (1/0), habilidades [[id, oculta]]]
 {

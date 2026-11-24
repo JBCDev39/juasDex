@@ -2,16 +2,33 @@ import { uiZoom } from '../zoom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import type { Db } from '../types';
 import { favs, pad, store } from '../data';
-import { Ball, Chevron, FLAVORS, GENS, ItemIcon, MoveClass, REGIONS, STAT_SHORT, Sprite, TypeBadge, reducedMotion } from './bits';
+import { Ball, Chevron, FLAVORS, GENS, ItemIcon, MoveClass, Picker, REGIONS, STAT_SHORT, Sprite, TypeBadge, reducedMotion, type Opt } from './bits';
 import { glyphPaths } from './glyphs';
+import PlacesView, { filterPlaces, loadPlaces, placeVersions, type Place } from './Places';
 import { flight } from '../flight';
 import { nav } from '../nav';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 type Panel = '' | 'type' | 'region';
-type Tab = 'pokemon' | 'mov' | 'hab' | 'obj' | 'nat';
-const TAB_LABEL: Record<Tab, string> = { pokemon: 'Pokémon', mov: 'Movimientos', hab: 'Habilidades', obj: 'Objetos', nat: 'Naturalezas' };
-const TABS: Tab[] = ['pokemon', 'mov', 'hab', 'obj', 'nat'];
+type Tab = 'pokemon' | 'mov' | 'hab' | 'obj' | 'nat' | 'lug';
+const TAB_LABEL: Record<Tab, string> = { pokemon: 'Pokémon', mov: 'Movimientos', hab: 'Habilidades', obj: 'Objetos', nat: 'Naturalezas', lug: 'Lugares' };
+const TABS: Tab[] = ['pokemon', 'mov', 'hab', 'obj', 'nat', 'lug'];
+
+/** Pokédex de cada juego: número regional y especie */
+type Dex = { vg: number; name: string; n: [number, number][] };
+let dexesP: Promise<Dex[]> | null = null;
+const loadDexes = () => (dexesP ??= fetch('data/dexes.json').then((r) => { if (!r.ok) throw new Error('dex'); return r.json() as Promise<Dex[]>; }).catch((e) => { dexesP = null; throw e; }));
+const dexGame = (d: Dex) => d.name.split(' · ')[0];
+const dexPart = (d: Dex) => d.name.split(' · ')[1] ?? '';
+/** Letras para el botón: "Platino" -> PL, "Espada / Escudo" -> EE, "Leyendas: Arceus" -> LA */
+const dexInitials = (d: Dex) => {
+  const src = dexPart(d) || dexGame(d);
+  const pieces = src.split(' / ');
+  if (pieces.length > 1) return pieces.map((x) => x.trim()[0]).join('').toUpperCase();
+  const caps = src.split(/[\s:·]+/).filter((w) => /^[A-ZÁÉÍÓÚÑ0-9]/.test(w)).map((w) => w[0]).join('');
+  return (caps.length >= 2 ? caps : src.slice(0, 2)).slice(0, 3).toUpperCase();
+};
+const dexLabel = (d: Dex) => { const t = dexPart(d) || dexGame(d); return t.length <= 11 ? t : dexInitials(d); };
 const ITEM_GROUPS: [string, string][] = [['', 'Todos'], ['equip', 'Equipables'], ['evo', 'Evolución'], ['baya', 'Bayas'], ['ball', 'Poké Balls'], ['med', 'Medicinas']];
 
 // La pestaña elegida solo se recuerda durante la sesión
@@ -24,6 +41,12 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const [q, setQ] = useState(() => store.get('q', ''));
   const [types, setTypes] = useState<number[]>(() => store.get('types', [] as number[]));
   const [gen, setGen] = useState(() => store.get('gen', 0));
+  const [dex, setDex] = useState(() => store.get('dex', 0)); // 0 = ninguna; si no, posición + 1
+  const [dexes, setDexes] = useState<Dex[] | null>(null);
+  const [regionMode, setRegionMode] = useState<'gen' | 'game'>(() => (store.get('dex', 0) ? 'game' : 'gen'));
+  const [lugV, setLugV] = useState(() => store.get('lugV', 0));
+  const [lugData, setLugData] = useState<Place[] | null>(null);
+  const [lugState, setLugState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [favOnly, setFavOnly] = useState(() => store.get('favOnly', false));
   const [tab, setTabState] = useState<Tab>(() => session.get('tab', 'pokemon') as Tab);
   const [panel, setPanel] = useState<Panel>('');
@@ -48,8 +71,11 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const [tabPill, setTabPill] = useState<{ left: number; width: number }>({ left: 3, width: 0 });
   const favList = favs.list();
   const favSet = new Set(favList);
-  const active = Boolean(q.trim() || types.length || gen || favOnly);
-  const filterCount = (types.length ? 1 : 0) + (gen ? 1 : 0) + (favOnly ? 1 : 0);
+  const curDex = dex && dexes ? dexes[dex - 1] ?? null : null;
+  const dexNum = useMemo(() => (curDex ? new Map(curDex.n.map(([num, sid]) => [sid, num])) : null), [curDex]);
+  const active = Boolean(q.trim() || types.length || gen || dex || favOnly);
+  const filterCount = (types.length ? 1 : 0) + (gen || dex ? 1 : 0) + (favOnly ? 1 : 0);
+  useEffect(() => { loadDexes().then(setDexes).catch(() => undefined); }, []);
 
   // La lista completa se dibuja después de mostrar el inicio, para que la app abra rápido
   useEffect(() => {
@@ -138,14 +164,20 @@ export default function List({ db }: { db: Db; stamp?: number }) {
 
   /* ---------- Filtros ---------- */
   const nq = norm(q.trim().replace(/^#/, ''));
-  const pokemon = useMemo(() => db.index.filter(([id, name, ts, g]) => {
-    if (favOnly && !favSet.has(id)) return false;
-    if (types.length && !types.every((t) => ts.includes(t))) return false;
-    if (gen && g !== gen) return false;
-    if (!nq) return true;
-    return /^\d+$/.test(nq) ? String(id).startsWith(String(+nq)) : norm(name).includes(nq);
+  const pokemon = useMemo(() => {
+    const list = db.index.filter(([id, name, ts, g]) => {
+      if (favOnly && !favSet.has(id)) return false;
+      if (types.length && !types.every((t) => ts.includes(t))) return false;
+      if (gen && g !== gen) return false;
+      if (dexNum && !dexNum.has(id)) return false;
+      if (!nq) return true;
+      if (/^\d+$/.test(nq)) return String(dexNum ? dexNum.get(id) : id).startsWith(String(+nq));
+      return norm(name).includes(nq);
+    });
+    // Con la Pokédex de un juego, en el orden de ese juego
+    return dexNum ? list.sort((a, b) => (dexNum.get(a[0]) ?? 0) - (dexNum.get(b[0]) ?? 0)) : list;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [db, nq, types, gen, favOnly, favList.join()]);
+  }, [db, nq, types, gen, dexNum, favOnly, favList.join()]);
   const allMoves = useMemo(() => Object.entries(db.moves).map(([id, m]) => [+id, m] as const).sort((a, b) => a[1][0].localeCompare(b[1][0], 'es')), [db]);
   const moves = useMemo(() => allMoves.filter(([, m]) => {
     if (types.length && !types.includes(m[1])) return false;
@@ -158,7 +190,19 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const items = useMemo(() => allItems.filter(([, it]) => (!itemGroup || it[2] === itemGroup) && (!nq || norm(it[0]).includes(nq))), [allItems, itemGroup, nq]);
   const allNat = useMemo(() => Object.entries(db.natures).map(([id, n]) => [+id, n] as const).sort((a, b) => a[1][0].localeCompare(b[1][0], 'es')), [db]);
   const natures = useMemo(() => allNat.filter(([, n]) => !nq || norm(n[0]).includes(nq)), [allNat, nq]);
-  const counts: Record<Tab, number> = { pokemon: pokemon.length, mov: moves.length, hab: abil.length, obj: items.length, nat: natures.length };
+  // Lugares: se cargan al abrir la pestaña o al buscar
+  const lugVersions = useMemo(() => placeVersions(db), [db]);
+  // Por defecto, el juego completo más nuevo (no un DLC de un solo lugar)
+  const lugVersion = lugV && lugVersions.includes(lugV) ? lugV : [...lugVersions].reverse().find((v) => ![48, 50, 51].includes(v)) ?? lugVersions[lugVersions.length - 1] ?? 0;
+  useEffect(() => {
+    if (!lugVersion || (tab !== 'lug' && !nq)) return;
+    let alive = true;
+    setLugState('loading');
+    loadPlaces(lugVersion).then((d) => { if (alive) { setLugData(d); setLugState('idle'); } }).catch(() => { if (alive) setLugState('error'); });
+    return () => { alive = false; };
+  }, [lugVersion, tab, nq]);
+  const places = useMemo(() => filterPlaces(db, lugData, nq), [db, lugData, nq]);
+  const counts: Record<Tab, number> = { pokemon: pokemon.length, mov: moves.length, hab: abil.length, obj: items.length, nat: natures.length, lug: places?.length ?? 0 };
 
   // Al buscar o filtrar desde la lista: el inicio se acomoda sin animar (está fuera de la vista)
   // y la vista se queda al principio de los resultados, sin saltos.
@@ -166,7 +210,7 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     if (!anchorList.current || !listTop.current) return;
     const y = listTop.current.getBoundingClientRect().top + window.scrollY;
     window.scrollTo({ top: y, behavior: 'auto' });
-  }, [nq, types, gen, favOnly, tab]);
+  }, [nq, types, gen, dex, favOnly, tab]);
 
   const save = (k: string, v: unknown) => { store.set(k, v); store.set('scroll', 0); };
   const setQuery = (v: string) => { setQ(v); save('q', v); };
@@ -177,11 +221,18 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     setTypes(next); save('types', next);
   };
   const clearTypes = () => { setTypes([]); save('types', []); };
-  const pickGen = (g: number, close = true) => { const v = g === gen ? 0 : g; setGen(v); save('gen', v); if (close) setPanel(''); };
+  const pickGen = (g: number, close = true) => { const v = g === gen ? 0 : g; setGen(v); save('gen', v); if (v) { setDex(0); save('dex', 0); } if (close) setPanel(''); };
+  const pickDex = (d: number, close = true) => {
+    const v = d === dex ? 0 : d; setDex(v); save('dex', v);
+    if (v) { setGen(0); save('gen', 0); setTab('pokemon'); }
+    if (close) setPanel('');
+  };
+  const clearRegion = (close = true) => { setGen(0); setDex(0); save('gen', 0); save('dex', 0); if (close) setPanel(''); };
+  const pickLug = (v: number) => { setLugV(v); store.set('lugV', v); setLugData(null); };
   const toggleFav = (close = true) => { const v = !favOnly; setFavOnly(v); save('favOnly', v); if (close) setPanel(''); if (v) setTab('pokemon'); };
   const clearAll = () => {
-    setQuery(''); setTypes([]); setGen(0); setFavOnly(false);
-    save('types', []); save('gen', 0); save('favOnly', false); setPanel('');
+    setQuery(''); setTypes([]); setGen(0); setDex(0); setFavOnly(false);
+    save('types', []); save('gen', 0); save('dex', 0); save('favOnly', false); setPanel('');
   };
   const toList = () => listTop.current?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
   const toTop = () => { anchorList.current = false; window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' }); };
@@ -211,7 +262,7 @@ export default function List({ db }: { db: Db; stamp?: number }) {
     }, { rootMargin: '0px 0px -4% 0px' });
     items.forEach((el) => io.observe(el));
     return () => io.disconnect();
-  }, [pokemon, moves, abil, items, natures, tab, ready]);
+  }, [pokemon, moves, abil, items, natures, places, tab, ready]);
 
   const tabIdx = TABS.indexOf(tab);
   // La píldora roja se mide sobre la pestaña activa (las pestañas no miden lo mismo)
@@ -264,13 +315,13 @@ export default function List({ db }: { db: Db; stamp?: number }) {
               <TypeBall db={db} selected={types} />
             </PadButton>
             <PadButton
-              label={gen ? REGIONS[gen - 1] : 'Región'}
+              label={curDex ? dexLabel(curDex) : gen ? REGIONS[gen - 1] : 'Región'}
               color="yellow"
-              on={panel === 'region' || gen > 0}
+              on={panel === 'region' || gen > 0 || dex > 0}
               open={panel === 'region'}
               onClick={() => setPanel(panel === 'region' ? '' : 'region')}
             >
-              {gen ? <span key={gen} className="pad__numeral">{GENS[gen - 1]}</span> : (
+              {curDex ? <span key={`d${dex}`} className="pad__numeral pad__numeral--dex">{dexInitials(curDex)}</span> : gen ? <span key={gen} className="pad__numeral">{GENS[gen - 1]}</span> : (
                 <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20Z M9 4v13.5 M15 6.5V20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" /></svg>
               )}
             </PadButton>
@@ -298,14 +349,19 @@ export default function List({ db }: { db: Db; stamp?: number }) {
             </div>
           </div>
 
-          <Drawer open={Boolean(panel)} which={panel}>
-            {(which) => which === 'region' ? (
+          <Drawer open={Boolean(panel)} which={panel === 'region' ? `region-${regionMode}` : panel}>
+            {(which) => which.startsWith('region') ? (
               <>
                 <div className="drawer__head">
-                  <span>Elija una región</span>
-                  {gen > 0 && <button className="drawer__link" onClick={() => pickGen(gen)}>Quitar</button>}
+                  <div className="rmode" role="tablist" aria-label="Filtrar por">
+                    <button role="tab" aria-selected={which === 'region-gen'} className={which === 'region-gen' ? 'is-on' : ''} onClick={() => setRegionMode('gen')}>Por generación</button>
+                    <button role="tab" aria-selected={which === 'region-game'} className={which === 'region-game' ? 'is-on' : ''} onClick={() => setRegionMode('game')}>Por juego</button>
+                  </div>
+                  {(gen > 0 || dex > 0) && <button className="drawer__link" onClick={() => clearRegion()}>Quitar</button>}
                 </div>
-                <RegionGrid gen={gen} onPick={(g) => pickGen(g)} />
+                {which === 'region-gen'
+                  ? <RegionGrid gen={gen} onPick={(g) => pickGen(g)} />
+                  : <DexGrid db={db} dexes={dexes} dex={dex} onPick={(d) => pickDex(d)} />}
               </>
             ) : (
               <>
@@ -326,8 +382,9 @@ export default function List({ db }: { db: Db; stamp?: number }) {
                   ['hab', 'Habilidades', <svg key="i" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M12 3l2.3 5.6 6 .5-4.6 3.9 1.4 5.9L12 15.8 6.9 18.9l1.4-5.9L3.7 9.1l6-.5Z" fill="currentColor" /></svg>],
                   ['obj', 'Objetos', <svg key="i" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7h2.5A1.5 1.5 0 0 1 20 8.5v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-10A1.5 1.5 0 0 1 5.5 7Zm2 0h4V5.5a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5Z" fill="currentColor" /></svg>],
                   ['nat', 'Naturalezas', <svg key="i" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M7 4l4 5H8v7H6V9H3Zm10 16-4-5h3V8h2v7h3Z" fill="currentColor" /></svg>],
+                  ['lug', 'Lugares', <svg key="i" viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12Zm0-9.5A2.5 2.5 0 1 1 12 7.5a2.5 2.5 0 0 1 0 5Z" fill="currentColor" /></svg>],
                 ] as [Tab, string, ReactNode][]).map(([t, label, icon]) => (
-                  <button key={t} className="key" tabIndex={active || panel ? -1 : 0} onClick={() => { setTab(t); anchorList.current = false; window.setTimeout(toList, 30); }}>
+                  <button key={t} className={`key${t === 'lug' ? ' key--wide' : ''}`} tabIndex={active || panel ? -1 : 0} onClick={() => { setTab(t); anchorList.current = false; window.setTimeout(toList, 30); }}>
                     <span className="key__icon">{icon}</span>{label}
                   </button>
                 ))}
@@ -387,8 +444,15 @@ export default function List({ db }: { db: Db; stamp?: number }) {
                   {gen > 0 && <button className="lf__link" onClick={() => pickGen(gen, false)}>Quitar</button>}
                 </div>
                 <RegionGrid gen={gen} onPick={(g) => pickGen(g, false)} plain />
+                <div className="lf__row lf__row--head">
+                  <span className="lf__title">Pokédex de un juego</span>
+                  {dex > 0 && <button className="lf__link" onClick={() => pickDex(dex, false)}>Quitar</button>}
+                </div>
+                <Picker title="Pokédex de un juego" value={dex} placeholder="Todas (Pokédex nacional)" searchable
+                  options={(dexes ?? []).map((d, i): Opt => ({ value: i + 1, label: d.name, group: `Generación ${GENS[(db.meta.versionGroups.find((g) => g.id === d.vg)?.gen ?? 1) - 1]}` })).reverse()}
+                  onChange={(v) => pickDex(v, false)} />
                 <div className="lf__foot">
-                  {filterCount > 0 && <button className="lf__link" onClick={() => { setTypes([]); setGen(0); setFavOnly(false); save('types', []); save('gen', 0); save('favOnly', false); }}>Quitar todos</button>}
+                  {filterCount > 0 && <button className="lf__link" onClick={() => { setTypes([]); setFavOnly(false); save('types', []); save('favOnly', false); clearRegion(false); }}>Quitar todos</button>}
                   <button className="lf__done" onClick={() => setListFilters(false)}>Listo</button>
                 </div>
               </>
@@ -399,13 +463,15 @@ export default function List({ db }: { db: Db; stamp?: number }) {
         <div className="list-wrap">
           <p className="count">
             <span key={`${tab}${counts[tab]}`} className="count__n">
-              {counts[tab]} {({ pokemon: ['Pokémon', 'Pokémon'], mov: ['movimiento', 'movimientos'], hab: ['habilidad', 'habilidades'], obj: ['objeto', 'objetos'], nat: ['naturaleza', 'naturalezas'] } as Record<Tab, [string, string]>)[tab][counts[tab] === 1 ? 0 : 1]}
+              {counts[tab]} {({ pokemon: ['Pokémon', 'Pokémon'], mov: ['movimiento', 'movimientos'], hab: ['habilidad', 'habilidades'], obj: ['objeto', 'objetos'], nat: ['naturaleza', 'naturalezas'], lug: ['lugar', 'lugares'] } as Record<Tab, [string, string]>)[tab][counts[tab] === 1 ? 0 : 1]}
               {favOnly && tab === 'pokemon' ? ' favoritos' : ''}
+              {curDex && tab === 'pokemon' ? ` · Pokédex de ${curDex.name.replace(' · ', ', ')}` : ''}
             </span>
             {active && <button className="link-btn" onClick={clearAll}>Limpiar todo</button>}
           </p>
-          {(tab === 'hab' || tab === 'obj' || tab === 'nat') && types.length > 0 && <p className="note note--inline">El filtro de tipo no aplica aquí.</p>}
-          {(tab === 'obj' || tab === 'nat') && gen > 0 && <p className="note note--inline">El filtro de región no aplica aquí.</p>}
+          {(tab === 'hab' || tab === 'obj' || tab === 'nat' || tab === 'lug') && types.length > 0 && <p className="note note--inline">El filtro de tipo no aplica aquí.</p>}
+          {(tab === 'obj' || tab === 'nat' || tab === 'lug') && gen > 0 && <p className="note note--inline">El filtro de región no aplica aquí.</p>}
+          {tab !== 'pokemon' && dex > 0 && <p className="note note--inline">La Pokédex de un juego solo aplica a Pokémon.</p>}
           {tab !== 'pokemon' && favOnly && <p className="note note--inline">Favoritos solo aplica a Pokémon.</p>}
           {tab === 'obj' && (
             <div className="chips-row" role="group" aria-label="Clase de objeto">
@@ -429,7 +495,7 @@ export default function List({ db }: { db: Db; stamp?: number }) {
                   {pokemon.map(([id, name, ts]) => (
                     <li key={id} className="reveal">
                       <button className={`card t-${db.meta.types[ts[0]]?.[1]}`} data-card={id} onClick={(e) => open(id, e.currentTarget)}>
-                        <span className="card__num">#{pad(id)}</span>
+                        <span className="card__num" title={dexNum ? `Nacional #${pad(id)}` : undefined}>#{dexNum ? String(dexNum.get(id)).padStart(3, '0') : pad(id)}</span>
                         {favSet.has(id) && <StarIcon filled size={16} className="card__fav" />}
                         <span className="card__sprite"><Sprite db={db} pid={id} size={88} /></span>
                         <span className="card__name">{name}</span>
@@ -485,6 +551,11 @@ export default function List({ db }: { db: Db; stamp?: number }) {
                   ))}
                 </ul>
               )
+            )}
+
+            {tab === 'lug' && (
+              <PlacesView db={db} version={lugVersion} onVersion={pickLug} list={places} loading={lugState === 'loading'} failed={lugState === 'error'}
+                onOpen={(sid, el) => open(sid, el)} />
             )}
 
             {(ready || active) && tab === 'nat' && (
@@ -641,6 +712,29 @@ function TypeGrid({ db, types, onToggle }: { db: Db; types: number[]; onToggle: 
           <svg className="tchip__glyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden style={{ '--glyph-cut': `var(--c-${ident})` } as CSSProperties}>{glyphPaths(ident)}</svg>
           {name}
         </button>
+      ))}
+    </div>
+  );
+}
+
+function DexGrid({ db, dexes, dex, onPick }: { db: Db; dexes: Dex[] | null; dex: number; onPick: (d: number) => void }) {
+  if (!dexes) return <p className="dexgrid__loading">Cargando juegos…</p>;
+  const gens = new Map<number, [Dex, number][]>();
+  dexes.forEach((d, i) => { const g = db.meta.versionGroups.find((x) => x.id === d.vg)?.gen ?? 1; if (!gens.has(g)) gens.set(g, []); gens.get(g)!.push([d, i + 1]); });
+  return (
+    <div className="dexgrid">
+      {[...gens].reverse().map(([g, list]) => (
+        <div key={g} className="dexgrid__gen">
+          <span className={`dexgrid__title rchip--g${g}`}>Generación {GENS[g - 1]}</span>
+          <div className="dexgrid__row">
+            {list.map(([d, i]) => (
+              <button key={i} className={`rchip rchip--g${g} dexchip${dex === i ? ' is-on' : ''}`} aria-pressed={dex === i} onClick={() => onPick(i)}>
+                <span className="dexchip__name">{dexPart(d) || dexGame(d)}</span>
+                <span className="dexchip__sub">{dexPart(d) ? dexGame(d) : `${d.n.length} Pokémon`}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );

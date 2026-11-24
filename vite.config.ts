@@ -39,6 +39,12 @@ export default defineConfig({
             options: { cacheName: 'juasdex-pokemon', expiration: { maxEntries: 100 } },
           },
           {
+            // Lugares por juego: se guardan al abrir cada juego
+            urlPattern: ({ url }) => url.pathname.includes('/data/places/'),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'juasdex-lugares', expiration: { maxEntries: 60 } },
+          },
+          {
             // Gritos: se guardan la primera vez que se escuchan
             urlPattern: ({ url }) => url.origin === 'https://raw.githubusercontent.com' && url.pathname.startsWith('/PokeAPI/cries/'),
             handler: 'CacheFirst',

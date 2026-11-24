@@ -1,10 +1,10 @@
 // Novedades que se muestran una vez después de actualizar.
 // Al publicar algo nuevo: cambie "v" y la lista.
 export const CHANGES = {
-  v: '2026-11-24-a',
+  v: '2026-11-24-b',
   items: [
-    'Ubicaciones nuevas: Diamante Brillante, Perla Reluciente, Leyendas: Arceus, Escarlata, Púrpura y Leyendas: Z-A.',
-    'Entradas de la Pokédex y categorías oficiales en español para la novena generación.',
-    'Muchos lugares de juegos viejos ahora tienen su nombre oficial en español.',
+    'Pokédex por juego: en Región, toque "Por juego" y vea solo los Pokémon de ese juego, con su número regional.',
+    'Nueva sección Lugares: elija un juego y vea qué Pokémon salen en cada ruta, cueva o zona. También puede buscar un Pokémon.',
+    'Ubicaciones nuevas para Diamante Brillante, Perla Reluciente, Leyendas: Arceus, Escarlata, Púrpura y Leyendas: Z-A.',
   ],
 };

@@ -23,6 +23,8 @@ const useNarrow = () => {
 
 let shinyPref = false; // se mantiene al pasar de un Pokémon a otro
 
+const longestWord = (x: string) => Math.max(...x.split(/\s+/).map((w) => w.length));
+
 export default function Detail({ db, id }: { db: Db; id: number }) {
   const narrow = useNarrow();
   const [sp, setSp] = useState<Species | null>(null);
@@ -150,7 +152,7 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
               {fav && <span key="b" className="fav-burst" aria-hidden><i /><i /><i /><i /><i /></span>}
             </button>
             <span className="hero__num">#{pad(id)}</span>
-            <h2 className="hero__name">{v && vi > 0 ? v.name : entry[1]}</h2>
+            <h2 className="hero__name hero__name--fit" style={{ '--len': Math.max(6, longestWord(v && vi > 0 ? v.name : entry[1])) } as CSSProperties}>{v && vi > 0 ? v.name : entry[1]}</h2>
             {vi > 0 && <span className="hero__form">{entry[1]}</span>}
             {sp?.genus && sp.id === id && <span className="hero__genus">{sp.genus}</span>}
             <div className="hero__types">

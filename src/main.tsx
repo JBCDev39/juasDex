@@ -8,6 +8,9 @@ import '@fontsource/rubik/latin-600.css';
 import '@fontsource/chakra-petch/latin-600.css';
 import '@fontsource/chakra-petch/latin-700.css';
 import './index.css';
+import { watchZoom } from './zoom';
+
+watchZoom();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

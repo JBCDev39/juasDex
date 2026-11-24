@@ -1,3 +1,4 @@
+import { uiZoom } from '../zoom';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Db } from '../types';
@@ -158,14 +159,18 @@ export function Picker({ title, value, options, onChange, layout = 'list', tone 
 
   const show = () => {
     if (!narrow && btn.current) {
-      const r = btn.current.getBoundingClientRect();
+      // Todo en las medidas del panel (que también crece con el zoom de pantallas grandes)
+      const z = uiZoom();
+      const b = btn.current.getBoundingClientRect();
+      const r = { left: b.left / z, top: b.top / z, bottom: b.bottom / z, width: b.width / z };
+      const vw = window.innerWidth / z, vh = window.innerHeight / z;
       const width = Math.max(r.width, layout === 'grid' ? 340 : 300);
-      const left = Math.min(Math.max(12, r.left), window.innerWidth - width - 12);
-      const below = window.innerHeight - r.bottom;
+      const left = Math.min(Math.max(12, r.left), vw - width - 12);
+      const below = vh - r.bottom;
       const maxHeight = Math.max(240, Math.min(440, below > 300 ? below - 20 : r.top - 20));
       setPos(below > 300 || below > r.top
         ? { left, width, top: r.bottom + 8, maxHeight, transformOrigin: 'top' }
-        : { left, width, bottom: window.innerHeight - r.top + 8, maxHeight, transformOrigin: 'bottom' });
+        : { left, width, bottom: vh - r.top + 8, maxHeight, transformOrigin: 'bottom' });
     }
     setQuery('');
     setShown(true);

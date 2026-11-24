@@ -1,6 +1,8 @@
 // "Vuelo" del sprite entre la lista y la ficha.
 // Se copia el sprite, se pone encima de todo y se mueve solo con transform (lo más fluido posible).
 
+import { uiZoom } from './zoom';
+
 const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** El sprite tocado en la lista, para que la ficha sepa desde dónde despegar */
@@ -13,9 +15,12 @@ export function fly(from: HTMLElement, to: HTMLElement, ms = 420): Promise<void>
   const b = to.getBoundingClientRect();
   if (reduced() || !inView(a) || !inView(b)) return Promise.resolve();
 
+  // La copia lleva el mismo zoom que la interfaz; sus medidas van en esa escala
+  const z = uiZoom();
   const ghost = from.cloneNode(true) as HTMLElement;
   Object.assign(ghost.style, {
-    position: 'fixed', left: `${a.left}px`, top: `${a.top}px`, width: `${a.width}px`, height: `${a.height}px`,
+    zoom: String(z),
+    position: 'fixed', left: `${a.left / z}px`, top: `${a.top / z}px`, width: `${a.width / z}px`, height: `${a.height / z}px`,
     margin: '0', zIndex: '70', pointerEvents: 'none', transformOrigin: '0 0', willChange: 'transform', viewTransitionName: 'none',
   });
   document.body.appendChild(ghost);
@@ -23,7 +28,7 @@ export function fly(from: HTMLElement, to: HTMLElement, ms = 420): Promise<void>
   to.style.visibility = 'hidden';
 
   const s = b.width / a.width;
-  const dx = b.left - a.left, dy = b.top - a.top;
+  const dx = (b.left - a.left) / z, dy = (b.top - a.top) / z;
   const anim = ghost.animate(
     [
       { transform: 'translate(0, 0) scale(1)' },

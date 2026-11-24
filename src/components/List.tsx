@@ -1,3 +1,4 @@
+import { uiZoom } from '../zoom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import type { Db } from '../types';
 import { favs, pad, store } from '../data';
@@ -78,7 +79,8 @@ export default function List({ db }: { db: Db; stamp?: number }) {
       const cap = searchPad.current?.querySelector('.pad__cap')?.getBoundingClientRect();
       const row = padsRef.current?.getBoundingClientRect();
       if (!cap || !row) return;
-      const l = Math.round(cap.left - row.left), r = Math.round(row.right - cap.right);
+      const z = uiZoom();
+      const l = Math.round((cap.left - row.left) / z), r = Math.round((row.right - cap.right) / z);
       setEdge((e) => (e.l === l && e.r === r ? e : { l, r }));
     };
     measure();

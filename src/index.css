@@ -1081,3 +1081,15 @@ button.sug__mon span { text-decoration: underline; text-decoration-color: color-
 :root { --z: 1; --corner-top: max(12px, calc(env(safe-area-inset-top) + 4px)); }
 .home__inner, .leds, .teams-btn, .scroll-hint, .dexlist, .lsearch, .fab-top, .sheet__page, .upd, .pop__panel { zoom: var(--z); }
 .pop--sheet .pop__panel { zoom: 1; }
+
+/* ---------- Generador: inicial (Historia) ---------- */
+.story-note { margin: -2px 0 0; }
+.starters { display: grid; gap: 8px; padding: 12px; border-radius: 16px; background: var(--card-2); }
+.starters__q { margin: 0; font-weight: 600; }
+.starters__row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.starter { display: grid; justify-items: center; align-content: start; gap: 2px; padding: 6px 0 8px; border-radius: 14px; border: 2px solid transparent; background: var(--card); color: var(--ink); font-size: 12px; letter-spacing: -0.015em; line-height: 1.15; font-weight: 600; text-align: center; transition: border-color 0.2s, transform 0.15s var(--ease); }
+.starter span { max-width: 100%; overflow-wrap: anywhere; }
+.starter.is-on { border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--card)); }
+.starter:active { transform: scale(0.95); }
+.starter__q { display: grid; place-items: center; width: 56px; height: 56px; font: 700 28px/1 var(--display); color: var(--muted); }
+.starters .small { margin: 0; }

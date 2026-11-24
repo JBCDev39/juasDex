@@ -418,6 +418,33 @@ for (const [pid, byVg] of learn) {
 for (const l of Object.values(vgDex)) l.sort((a, b) => a - b);
 fs.writeFileSync(path.join(OUT, 'vg-dex.json'), JSON.stringify(vgDex));
 
+// Modo historia: Pokédex regional de cada juego (sin DLC) y los tres iniciales que se eligen al empezar.
+// vg -> [especies de la Pokédex regional, [inicial planta, fuego, agua] (especie base)]
+{
+  const STARTER_BASES = [1, 4, 7, 152, 155, 158, 252, 255, 258, 387, 390, 393, 495, 498, 501, 650, 653, 656, 722, 725, 728, 810, 813, 816, 906, 909, 912];
+  const DLC = { 20: [28, 29], 25: [32, 33], 30: [35] }; // Isla de la Armadura, Corona Nevada, Kitakami, Arándano, Megadimensión
+  const dexNums = new Map();
+  for (const r of read('pokemon_dex_numbers')) {
+    if (!dexNums.has(r.pokedex_id)) dexNums.set(r.pokedex_id, []);
+    dexNums.get(r.pokedex_id).push([+r.pokedex_number, +r.species_id]);
+  }
+  const story = {};
+  const byVg = new Map();
+  for (const r of read('pokedex_version_groups')) {
+    if (!byVg.has(r.version_group_id)) byVg.set(r.version_group_id, []);
+    byVg.get(r.version_group_id).push(+r.pokedex_id);
+  }
+  for (const [vg, dexes] of byVg) {
+    const use = dexes.filter((d) => !(DLC[vg] || []).includes(d) && d !== 36);
+    if (!use.length) continue;
+    const ordered = use.flatMap((d) => (dexNums.get(String(d)) || []).sort((a, b) => a[0] - b[0]).map((x) => x[1]));
+    const species = [...new Set(ordered)];
+    const trio = ordered.filter((sid) => STARTER_BASES.includes(sid)).slice(0, 3);
+    story[vg] = [species.sort((a, b) => a - b), trio.length === 3 ? trio : []];
+  }
+  fs.writeFileSync(path.join(OUT, 'story.json'), JSON.stringify(story));
+}
+
 // ---------- Datos para el generador de equipos ----------
 // pid -> [total, [ps, atq, def, atesp, defesp, vel], evolución final (1/0), 0 normal | 1 legendario | 2 singular, especial (mega/primigenio/etc.) (1/0), habilidades [[id, oculta]]]
 {

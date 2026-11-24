@@ -10,7 +10,19 @@ import { loadSpecies } from './data';
 import { ABIL_DEF, ABIL_SCORE } from './abilityfx';
 
 export type Purpose = 'historia' | 'combates' | 'monotipo' | 'sorpresa';
-export interface GenOptions { vg: number; purpose: Purpose; monoType: number; anchors: number[]; legends: boolean }
+export interface GenOptions { vg: number; purpose: Purpose; monoType: number; anchors: number[]; legends: boolean; starter?: number }
+/** vg -> [especies de la Pokédex regional (sin DLC), iniciales [planta, fuego, agua]] */
+export type Story = Record<string, [number[], number[]]>;
+let storyP: Promise<Story> | null = null;
+export const loadStory = () => (storyP ??= fetch('data/story.json').then((r) => { if (!r.ok) throw new Error('story'); return r.json() as Promise<Story>; }).catch((e) => { storyP = null; throw e; }));
+// Juegos donde se pueden tener los tres iniciales (Amarillo, Let's Go) o no se elige uno (DLC)
+const NO_STARTER_CHOICE = new Set([2, 19, 31]);
+export const starterTrio = (story: Story | null, vg: number) => (NO_STARTER_CHOICE.has(vg) ? [] : story?.[vg]?.[1] ?? []);
+const STARTER_BASES = [1, 4, 7, 152, 155, 158, 252, 255, 258, 387, 390, 393, 495, 498, 501, 650, 653, 656, 722, 725, 728, 810, 813, 816, 906, 909, 912];
+/** especie -> especie base de su línea inicial (o undefined) */
+export const starterBase = (sid: number) => STARTER_BASES.find((b) => sid >= b && sid <= b + 2);
+/** ¿Qué Pokémon se pueden usar en el modo historia de ese juego? (null = sin límite) */
+export const storySpecies = (story: Story | null, vg: number) => { const d = story?.[vg]?.[0]; return d?.length ? new Set(d) : null; };
 /** pid -> [total, stats, final, legendario, especial, habilidades] */
 export type Pool = Record<string, [number, number[], number, number, number, [number, number][]?]>;
 
@@ -130,7 +142,9 @@ function teamScore(db: Db, team: Cand[], o: GenOptions): number {
   return s;
 }
 
-export function candidatePool(db: Db, pool: Pool, vgDex: Record<string, number[]>, o: GenOptions): number[] {
+export function candidatePool(db: Db, pool: Pool, vgDex: Record<string, number[]>, o: GenOptions, story: Story | null = null): number[] {
+  const inStory = o.purpose === 'historia' ? storySpecies(story, o.vg) : null;
+  const trio = o.purpose === 'historia' ? starterTrio(story, o.vg) : [];
   const minBst = o.purpose === 'combates' ? 470 : o.purpose === 'historia' ? 420 : 390;
   const allowLegend = o.purpose === 'combates' && o.legends;
   const seen = new Set<number>();
@@ -142,6 +156,10 @@ export function candidatePool(db: Db, pool: Pool, vgDex: Record<string, number[]
     const sid = sidOf(db, pid);
     if (QUASI.has(sid) && !allowLegend) return false;
     if (TRAPS.has(sid) && o.purpose !== 'sorpresa') return false;
+    if (inStory && !inStory.has(sid)) return false; // no aparece en la historia de ese juego
+    // Si dijo cuál inicial eligió, los otros dos no se pueden tener
+    const sb = starterBase(sid);
+    if (sb && o.starter && sb !== o.starter && trio.includes(sb)) return false;
     if (o.purpose === 'monotipo' && !typesOf(db, pid).includes(o.monoType)) return false;
     if (seen.has(pid)) return false;
     seen.add(pid);
@@ -163,8 +181,11 @@ function pickSix(db: Db, cands: Cand[], anchors: Cand[], o: GenOptions, avoid: S
   const jit = new Map(cands.map((c) => [c.pid, Math.random() * jitterAmp - (avoid.has(c.pid) ? 2.5 : 0) - (recent.get(c.sid) ?? 0) * 1.6]));
   const isLegend = (c: Cand) => c.legend > 0 || QUASI.has(c.sid);
   const score = (team: Cand[]) => teamScore(db, team, o) + team.reduce((s, c) => s + (jit.get(c.pid) ?? 0), 0);
+  // Solo una línea inicial por equipo (en la historia solo se recibe uno)
+  const oneStarter = o.purpose === 'historia';
   const allowed = (team: Cand[], c: Cand) =>
-    !team.some((x) => x.sid === c.sid) && (!isLegend(c) || team.filter(isLegend).length < 2);
+    !team.some((x) => x.sid === c.sid) && (!isLegend(c) || team.filter(isLegend).length < 2) &&
+    !(oneStarter && starterBase(c.sid) && team.some((x) => starterBase(x.sid)));
 
   const team: Cand[] = [...anchors];
   while (team.length < 6) {
@@ -279,12 +300,15 @@ async function buildSet(db: Db, c: Cand, o: GenOptions, teamCovered: Set<number>
 }
 
 /** avoid: Pokémon del intento anterior, para que "Otro" no repita el mismo equipo */
-export async function generateTeam(db: Db, pool: Pool, vgDex: Record<string, number[]>, o: GenOptions, avoid: number[] = []): Promise<Omit<Team, 'id'> | null> {
+export async function generateTeam(db: Db, pool: Pool, vgDex: Record<string, number[]>, o: GenOptions, avoid: number[] = [], story: Story | null = null): Promise<Omit<Team, 'id'> | null> {
   // Primero se cargan los tipos de las formas (Alola, Galar, Rotom…) para filtrar bien
   await preloadFormTypes(db, [...(vgDex[o.vg] ?? []).filter((p) => db.forms[p] && pool[p]?.[2] && !pool[p]?.[4]), ...o.anchors]);
   const gen = vgGen(db, o.vg);
-  const cands = candidatePool(db, pool, vgDex, o).map((pid) => makeCand(db, pool, pid, o, gen)).filter(Boolean) as Cand[];
-  const anchors = [...new Set(o.anchors)].slice(0, 2).map((pid) => makeCand(db, pool, pid, o, gen)).filter(Boolean) as Cand[];
+  const cands = candidatePool(db, pool, vgDex, o, story).map((pid) => makeCand(db, pool, pid, o, gen)).filter(Boolean) as Cand[];
+  const fixed = [...new Set(o.anchors)].slice(0, 2);
+  // El inicial que eligió entra al equipo ya evolucionado (si no lo puso ya en los fijos)
+  if (o.purpose === 'historia' && o.starter && starterTrio(story, o.vg).includes(o.starter) && !fixed.some((p) => starterBase(sidOf(db, p)) === o.starter)) fixed.unshift(o.starter + 2);
+  const anchors = fixed.map((pid) => makeCand(db, pool, pid, o, gen)).filter(Boolean) as Cand[];
   if (!cands.length && !anchors.length) return null;
   const six = pickSix(db, cands, anchors, o, new Set(avoid));
   remember(six.slice(anchors.length).map((c) => c.sid));

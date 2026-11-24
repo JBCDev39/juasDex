@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Db, Team, TeamMember, Variety } from '../types';
 import { defense, favs, loadSpecies, loadVgDex, pidInfo, store, teams } from '../data';
-import { buildMember, generateTeam, loadPool, suggestSwap, type GenOptions, type Pool, type Purpose, type Suggestion } from '../generator';
+import { buildMember, generateTeam, loadPool, loadStory, starterTrio, storySpecies, suggestSwap, type GenOptions, type Pool, type Purpose, type Story, type Suggestion } from '../generator';
 import { nav } from '../nav';
 import { BackButton, GENS, ItemIcon, MiniMon, MoveClass, Picker, STAT_SHORT, Spinner, Sprite, TypeBadge, reducedMotion, type Opt } from './bits';
 import { glyphPaths } from './glyphs';
@@ -859,21 +859,25 @@ function GenBusy() {
 export function GenPage({ db }: { db: Db }) {
   const [vgDex, setVgDex] = useState<Record<string, number[]> | null>(null);
   const [pool, setPool] = useState<Pool | null>(null);
+  const [story, setStory] = useState<Story | null>(null);
   const [loadErr, setLoadErr] = useState(false);
   const [o, setO] = useState<GenOptions>(() => ({ vg: 25, purpose: 'historia', monoType: 10, anchors: [], legends: false, ...store.get<Partial<GenOptions>>('genOpts', {}) }));
   const [stage, setStage] = useState<'ask' | 'busy' | 'done' | 'error'>('ask');
   const [result, setResult] = useState<Omit<Team, 'id'> | null>(null);
   const [q, setQ] = useState('');
   useEffect(() => {
-    Promise.all([loadVgDex(), loadPool()]).then(([v, p]) => { setVgDex(v); setPool(p); }).catch(() => setLoadErr(true));
+    Promise.all([loadVgDex(), loadPool(), loadStory()]).then(([v, p, st]) => { setVgDex(v); setPool(p); setStory(st); }).catch(() => setLoadErr(true));
   }, []);
   useEffect(() => { document.querySelector('.sheet')?.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' }); }, [stage]);
 
   const games = db.meta.versionGroups.filter((g) => (vgDex ? vgDex[g.id]?.length : true));
   const gameOpts: Opt[] = [...games].reverse().map((g) => ({ value: g.id, label: g.name, group: `Generación ${GENS[g.gen - 1]}` }));
-  const inGame = useMemo(() => new Set(vgDex?.[o.vg] ?? []), [vgDex, o.vg]);
+  // En Historia solo se ofrecen los Pokémon de la Pokédex regional del juego
+  const storySet = useMemo(() => (o.purpose === 'historia' ? storySpecies(story, o.vg) : null), [story, o.vg, o.purpose]);
+  const inGame = useMemo(() => new Set((vgDex?.[o.vg] ?? []).filter((pid) => !storySet || storySet.has(db.forms[pid]?.[0] ?? pid))), [vgDex, o.vg, storySet, db]);
+  const trio = o.purpose === 'historia' ? starterTrio(story, o.vg) : [];
   const set = (p: Partial<GenOptions>) => setO((x) => ({ ...x, ...p }));
-  const setVg = (vg: number) => setO((x) => ({ ...x, vg, anchors: x.anchors.filter((pid) => vgDex?.[vg]?.includes(pid)) }));
+  const setVg = (vg: number) => setO((x) => ({ ...x, vg, starter: 0, anchors: x.anchors.filter((pid) => vgDex?.[vg]?.includes(pid)) }));
 
   const favIn = favs.list().filter((sid) => inGame.has(sid) && !o.anchors.includes(sid)).slice(0, 12);
   const found = q.trim().length >= 2 ? [...inGame].filter((pid) => fold(pidInfo(db, pid).name + ' ' + (pidInfo(db, pid).form ?? '')).includes(fold(q.trim())) && !o.anchors.includes(pid)).slice(0, 9) : [];
@@ -885,7 +889,7 @@ export function GenPage({ db }: { db: Db }) {
     setStage('busy');
     try {
       const avoid = (result?.members.filter(Boolean) as TeamMember[] | undefined)?.map((m) => m.pid) ?? [];
-      const [t] = await Promise.all([generateTeam(db, pool, vgDex, o, avoid), new Promise((r) => setTimeout(r, reducedMotion() ? 300 : 1500))]);
+      const [t] = await Promise.all([generateTeam(db, pool, vgDex, o, avoid, story), new Promise((r) => setTimeout(r, reducedMotion() ? 300 : 1500))]);
       if (!t || !t.members.some(Boolean)) { setStage('error'); return; }
       setResult(t); setStage('done');
     } catch { setStage('error'); }
@@ -936,6 +940,27 @@ export function GenPage({ db }: { db: Db }) {
                       </button>
                     ))}
                   </div>
+                  {o.purpose === 'historia' && storySet && (
+                    <p className="muted small story-note">Solo con Pokémon de la Pokédex de {gameName(db, o.vg)}{[20, 25, 30].includes(o.vg) ? ', sin contenido descargable' : ''}.</p>
+                  )}
+                  {o.purpose === 'historia' && trio.length === 3 && (
+                    <div className="starters">
+                      <p className="starters__q">¿Qué inicial eligió? <small className="muted">(opcional)</small></p>
+                      <div className="starters__row">
+                        {trio.map((sid) => (
+                          <button key={sid} className={`starter${o.starter === sid ? ' is-on' : ''}`} aria-pressed={o.starter === sid} onClick={() => set({ starter: o.starter === sid ? 0 : sid })}>
+                            <Sprite db={db} pid={sid} size={56} />
+                            <span>{pidInfo(db, sid).name}</span>
+                          </button>
+                        ))}
+                        <button className={`starter starter--none${!o.starter ? ' is-on' : ''}`} aria-pressed={!o.starter} onClick={() => set({ starter: 0 })}>
+                          <span className="starter__q" aria-hidden>?</span>
+                          <span>No importa</span>
+                        </button>
+                      </div>
+                      <p className="muted small">{o.starter ? `${pidInfo(db, o.starter + 2).name} va en el equipo y los otros dos iniciales no salen.` : 'Si no elige, puede salir uno de los tres (nunca dos).'}</p>
+                    </div>
+                  )}
                   {o.purpose === 'monotipo' && (
                     <div className="monogrid">
                       {ALL_T.map((t) => (

@@ -993,12 +993,9 @@ button.move:last-child { border-bottom: 0; }
 
 /* ---------- Generador ---------- */
 .gen-cta, .big-btn--gen { position: relative; overflow: hidden; isolation: isolate; background: linear-gradient(115deg, #2f86ef, #6a5ae8, #a84bd8, #d6182f, #a84bd8, #6a5ae8, #2f86ef); background-size: 300% 100%; animation: genflow 10s ease-in-out infinite alternate; }
-.gen-cta::after, .big-btn--gen::after { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / 0.26) 50%, transparent 62%); transform: translateX(-130%); animation: genshine 7s cubic-bezier(0.45, 0, 0.25, 1) 1.2s infinite; }
 .gen-cta { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border-radius: 18px; border: 3px solid #0e1317; text-align: left; color: #fff; box-shadow: 0 4px 0 #0e1317; transition: transform 0.12s var(--ease), box-shadow 0.12s; }
-.gen-cta__icon svg, .big-btn--gen svg { animation: gentwinkle 7s ease-in-out 1.2s infinite; transform-origin: 50% 55%; }
 @keyframes genflow { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
-@keyframes genshine { 0% { transform: translateX(-130%); } 26%, 100% { transform: translateX(130%); } }
-@keyframes gentwinkle { 0%, 7%, 24%, 100% { transform: none; } 13% { transform: scale(1.2) rotate(20deg); } }
+
 .gen-cta:active { transform: translateY(3px); box-shadow: 0 1px 0 #0e1317; }
 .gen-cta__icon { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 14px; background: rgb(255 255 255 / 0.18); color: #ffd84a; }
 .gen-cta__text { display: grid; flex: 1; min-width: 0; }
@@ -1030,4 +1027,25 @@ button.move:last-child { border-bottom: 0; }
 .gen-busy__steps { display: flex; gap: 6px; }
 .gen-busy__steps i { width: 26px; height: 5px; border-radius: 99px; background: var(--line); transition: background 0.3s; }
 .gen-busy__steps i.on { background: linear-gradient(90deg, #2f86ef, #a84bd8); }
-@media (prefers-reduced-motion: reduce) { .gen-busy__ball, .ins, .covpick, .gen-busy__text, .gen-cta, .big-btn--gen, .gen-cta::after, .big-btn--gen::after, .gen-cta__icon svg, .big-btn--gen svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .gen-busy__ball, .ins, .covpick, .gen-busy__text, .gen-cta, .big-btn--gen { animation: none; } }
+
+/* ---------- Aviso de actualización ---------- */
+.upd { position: fixed; z-index: 70; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); width: min(420px, calc(100vw - 24px)); transform: translateX(-50%); display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 14px 14px 12px; border-radius: 20px; border: 3px solid #0e1317; background: #1c2228; color: #f3f4f6; box-shadow: 0 5px 0 #0e1317, 0 18px 40px rgb(0 0 0 / 0.35); animation: upd-in 0.45s var(--spring) both; }
+.upd.is-out { animation: upd-out 0.25s var(--ease) both; }
+.upd__icon { grid-row: span 2; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: var(--red); color: #fff; }
+.upd__icon svg { animation: upd-spin 2.4s var(--ease) infinite; }
+.upd__icon--news { background: #f2b600; color: #1c2228; }
+.upd__icon--news svg { animation: none; }
+.upd strong { font: 700 16px/1.2 var(--display); }
+.upd li::marker { color: #f2b600; }
+.upd p { margin: 0; font-size: 13.5px; color: #b6bcc4; line-height: 1.35; }
+.upd ul { grid-column: 1 / -1; margin: 8px 0 0; padding: 0 0 0 20px; list-style: disc; display: grid; gap: 4px; font-size: 14px; line-height: 1.45; color: #d9dde2; }
+.upd__actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.upd__btn { height: 40px; padding: 0 16px; border-radius: 12px; border: 0; font: 700 15px/1 var(--display); background: transparent; color: #b6bcc4; }
+.upd__btn--go { background: var(--red); color: #fff; box-shadow: 0 3px 0 #7d0d1b; }
+.upd__btn--go:active { transform: translateY(2px); box-shadow: 0 1px 0 #7d0d1b; }
+.upd__btn:disabled { opacity: 0.7; }
+@keyframes upd-in { from { opacity: 0; transform: translate(-50%, 30px) scale(0.96); } }
+@keyframes upd-out { to { opacity: 0; transform: translate(-50%, 20px); } }
+@keyframes upd-spin { 0%, 55% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .upd, .upd.is-out, .upd__icon svg { animation: none; } }

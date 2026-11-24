@@ -4,6 +4,7 @@ import type { Db } from './types';
 import { parseRoute, type Route } from './nav';
 import List from './components/List';
 import Sheet from './components/Sheet';
+import UpdateToast from './components/UpdateToast';
 import { Spinner } from './components/bits';
 
 const valid = (db: Db, r: Route): Route => {
@@ -55,6 +56,7 @@ export default function App() {
           onClosed={() => { setShown(null); setClosing(false); setStamp((x) => x + 1); }}
         />
       )}
+      <UpdateToast />
     </>
   );
 }

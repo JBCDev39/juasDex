@@ -11,7 +11,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       injectRegister: null, // se registra a mano en main.tsx
-      registerType: 'autoUpdate',
+      registerType: 'prompt', // la versión nueva espera a que la persona toque "Actualizar"
       includeAssets: ['icon.svg'],
       manifest: {
         name: 'JuasDex',

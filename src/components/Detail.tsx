@@ -160,14 +160,14 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
             </div>
             {tags.length > 0 && <div className="hero__tags">{tags.map((t) => <span key={t} className="tag">{t}</span>)}</div>}
           </div>
+          {sp && sp.id === id && sp.varieties.length > 1 && (
+            <div className="forms" role="group" aria-label="Formas">
+              {sp.varieties.map((x, i) => (
+                <button key={x.pid} className={`chip${i === vi ? ' is-on' : ''}`} aria-pressed={i === vi} onClick={() => setVi(i)}>{i === 0 ? 'Normal' : x.name}</button>
+              ))}
+            </div>
+          )}
         </div>
-        {sp && sp.id === id && sp.varieties.length > 1 && (
-          <div className="forms" role="group" aria-label="Formas">
-            {sp.varieties.map((x, i) => (
-              <button key={x.pid} className={`chip${i === vi ? ' is-on' : ''}`} onClick={() => setVi(i)}>{i === 0 ? 'Normal' : x.name}</button>
-            ))}
-          </div>
-        )}
       </section>
 
       <Tabs tab={tab} onChange={chooseTab} />
@@ -407,17 +407,17 @@ function EvoTree({ db, node, current, rootHow, depth = 0 }: { db: Db; node: EvoN
   while (cur.n.length === 1) { cur = cur.n[0]; line.push(cur); }
   return (
     <div className="evo">
+      {rootHow && <Arrow down how={node.c} />}
       <div className="evo__line">
         {line.map((x, i) => (
           <Fragment key={x.id}>
-            {i > 0 && <Arrow />}
-            <EvoCard db={db} id={x.id} current={current} i={depth + i} how={i > 0 || rootHow ? x.c : undefined} />
+            {i > 0 && <Arrow how={x.c} />}
+            <EvoCard db={db} id={x.id} current={current} i={depth + i} />
           </Fragment>
         ))}
       </div>
       {cur.n.length > 1 && (
         <>
-          <Arrow down />
           <div className="evo__fork">
             {cur.n.map((k, j) => {
               let len = 1, c = k; while (c.n.length === 1) { c = c.n[0]; len++; }
@@ -433,21 +433,30 @@ function EvoTree({ db, node, current, rootHow, depth = 0 }: { db: Db; node: EvoN
     </div>
   );
 }
-function Arrow({ down }: { down?: boolean }) {
+/** Versión corta de la condición para que quepa debajo de la flecha ("Usar Piedra Trueno" → "Piedra Trueno") */
+const shortHow = (x: string) => {
+  const t = x.replace(/^Usar /, '').replace(/^Subir de nivel con /, '').replace(/^Subir de nivel cerca de una? /, 'Cerca de ')
+    .replace(/^Subir de nivel conociendo /, 'Conociendo ').replace(/^Subir de nivel /, 'Nivel ');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+/** Flecha con la condición de evolución debajo (o al lado, si apunta hacia abajo) */
+function Arrow({ down, how }: { down?: boolean; how?: string[] }) {
+  const full = how ? (how.length ? how.join(' · ') : 'Condición especial') : '';
+  const label = how && !down && how.length ? how.map(shortHow).join(' · ') : full;
   return (
-    <span className={`evo__arrow${down ? ' is-down' : ''}`} aria-hidden>
-      <svg viewBox="0 0 24 24" width="20" height="20"><path d={down ? 'M12 4v15m-6-6 6 6 6-6' : 'M4 12h15m-6-6 6 6-6 6'} fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    <span className={`evo__arrow${down ? ' is-down' : ''}`}>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d={down ? 'M12 4v15m-6-6 6 6 6-6' : 'M4 12h15m-6-6 6 6-6 6'} fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      {how && <span className="evo__how" title={full} aria-label={full}>{label}</span>}
     </span>
   );
 }
-function EvoCard({ db, id, current, i, how }: { db: Db; id: number; current: number; i: number; how?: string[] }) {
+function EvoCard({ db, id, current, i }: { db: Db; id: number; current: number; i: number }) {
   const e = db.index[id - 1];
   return (
     <button className={`evo__card${id === current ? ' is-on' : ''}`} style={{ '--i': Math.min(i, 10) } as CSSProperties} onClick={() => id !== current && nav.replace(`pokemon-${id}`)}>
       <Sprite db={db} pid={id} size={60} />
       <span className="evo__name">{e?.[1]}</span>
       <span className="evo__types">{e?.[2].map((t) => <i key={t} className={`dot t-${ident(db, t)}`} />)}</span>
-      {how && <span className="evo__how">{how.length ? how.join(' · ') : 'Condición especial'}</span>}
     </button>
   );
 }

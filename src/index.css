@@ -522,10 +522,12 @@ button:disabled { cursor: default; opacity: 0.35; }
   .hero__name { font-size: 27px; }
   .hero__genus { font-size: 14px; }
 }
-.forms { position: relative; max-width: 1100px; margin: 12px auto 0; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.forms { grid-column: 1 / -1; display: flex; gap: 6px; overflow-x: auto; margin: 0 -4px -2px; padding: 10px 4px 2px; border-top: 1px solid rgba(255, 255, 255, 0.08); scrollbar-width: none; }
 .chip { flex: none; height: 38px; padding: 0 14px; border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.45); background: transparent; color: #fff; font-weight: 600; font-size: 14px; transition: background 0.2s, color 0.2s, transform 0.15s var(--ease); }
 .chip:active { transform: scale(0.94); }
 .chip.is-on { background: #fff; color: var(--red); border-color: #fff; }
+.forms .chip { height: 32px; padding: 0 13px; border-width: 1.5px; border-color: rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.05); color: #c9ced5; font-size: 13.5px; }
+.forms .chip.is-on { background: #fff; color: #1c2228; border-color: #fff; }
 
 .tabs { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 .tabs__inner { position: relative; max-width: 1100px; margin: 0 auto; display: flex; overflow-x: auto; scrollbar-width: none; padding: 0 max(calc(4vw / var(--z)), 4px); }
@@ -645,7 +647,7 @@ button.move:last-child { border-bottom: 0; }
 .evo { display: grid; justify-items: stretch; gap: 2px; }
 .evo__line { display: flex; align-items: stretch; justify-content: center; gap: 2px; }
 .evo__card {
-  flex: 1 1 0; max-width: 150px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 6px 10px; border-radius: 16px;
+  flex: 1.7 1 0; max-width: 150px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 2px 10px; border-radius: 16px;
   background: var(--card-2); border: 2px solid transparent; transition: transform 0.2s var(--spring), border-color 0.2s, background 0.2s;
   animation: pop 0.45s var(--spring) both; animation-delay: calc(0.1s + var(--i) * 0.08s);
 }
@@ -653,13 +655,15 @@ button.move:last-child { border-bottom: 0; }
 .evo__card:active { transform: scale(0.94); }
 .evo__card.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--card)); cursor: default; }
 .evo__card.is-on .sprite { animation: float 2.6s ease-in-out infinite; }
-.evo__name { font-weight: 600; font-size: 14px; line-height: 1.2; text-align: center; }
+.evo__name { max-width: 100%; font-weight: 600; font-size: clamp(12.5px, 3.3vw, 14px); letter-spacing: -0.015em; line-height: 1.2; text-align: center; }
 .evo__types { display: flex; gap: 3px; }
-.evo__how { margin-top: auto; padding: 4px 8px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); font-size: 11.5px; line-height: 1.3; color: var(--muted); text-align: center; }
-.evo__arrow { flex: none; align-self: center; display: grid; place-items: center; width: 20px; color: var(--accent); }
+.evo__how { display: block; width: 100%; padding: 3px 4px; border-radius: 8px; background: var(--card-2); font-size: 10.5px; font-weight: 600; line-height: 1.25; color: var(--muted); text-align: center; text-wrap: balance; }
+.evo__arrow { flex: 1 1 0; min-width: 58px; max-width: 90px; align-self: center; display: grid; justify-items: center; gap: 4px; padding: 0 2px; color: var(--accent); }
+.evo__arrow:not(:has(.evo__how)) { flex: 0 0 24px; min-width: 24px; }
 .evo__arrow svg { animation: nudge 1.8s ease-in-out infinite; }
 @keyframes nudge { 50% { transform: translateX(3px); } }
-.evo__arrow.is-down { width: auto; padding: 2px 0; }
+.evo__arrow.is-down { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 0; }
+.evo__arrow.is-down .evo__how { width: max-content; max-width: 170px; }
 .evo__arrow.is-down svg { animation-name: nudge-down; }
 @keyframes nudge-down { 50% { transform: translateY(3px); } }
 .evo__fork { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(130px, 100%), 1fr)); gap: 8px; }

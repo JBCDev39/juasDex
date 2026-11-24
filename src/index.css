@@ -1049,3 +1049,27 @@ button.move:last-child { border-bottom: 0; }
 @keyframes upd-out { to { opacity: 0; transform: translate(-50%, 20px); } }
 @keyframes upd-spin { 0%, 55% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .upd, .upd.is-out, .upd__icon svg { animation: none; } }
+
+/* ---------- Sugerir cambio ---------- */
+.sug { margin-top: 12px; padding: 10px 12px 12px; border-radius: 14px; border: 1px dashed color-mix(in srgb, #2f86ef 45%, var(--line)); background: color-mix(in srgb, #2f86ef 5%, var(--card)); animation: insrise 0.35s var(--ease) 0.25s both; }
+.sug__top { display: flex; align-items: center; justify-content: space-between; }
+.sug__tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; color: #2f86ef; }
+.sug__x { display: grid; place-items: center; width: 30px; height: 30px; margin: -4px -6px 0 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); }
+.sug__x:active { background: var(--card-2); }
+.sug__swap { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.sug__mon { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; padding: 0; border: 0; background: none; color: var(--ink); font-weight: 600; font-size: 14.5px; text-align: left; }
+.sug__mon span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sug__mon small { color: var(--muted); font-weight: 500; }
+.sug__mon--out { opacity: 0.6; }
+.sug__mon--out span { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+button.sug__mon span { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--ink) 25%, transparent); text-underline-offset: 3px; }
+.sug__arrow { flex: none; color: var(--muted); }
+.sug__why { margin: 6px 0 0; padding: 0 0 0 18px; font-size: 13.5px; line-height: 1.4; color: var(--muted); list-style: disc; }
+.sug__actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.sug__actions small { font-size: 12px; color: var(--muted); line-height: 1.3; }
+.sug__go { flex: none; height: 36px; padding: 0 16px; border-radius: 11px; border: 2px solid #0e1317; background: #2f86ef; color: #fff; font: 700 14.5px/1 var(--display); box-shadow: 0 3px 0 #0e1317; }
+.sug__go:active { transform: translateY(2px); box-shadow: 0 1px 0 #0e1317; }
+.sug__go:disabled { opacity: 0.7; }
+.sug--done { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-style: solid; font-size: 14px; }
+.sug__link { border: 0; background: none; color: #2f86ef; font-weight: 700; font-size: 14px; padding: 6px 2px; }
+@media (prefers-reduced-motion: reduce) { .sug { animation: none; } }

@@ -295,3 +295,90 @@ export async function generateTeam(db: Db, pool: Pool, vgDex: Record<string, num
   while (members.length < 6) members.push(null);
   return { name: '', vg: o.vg, members };
 }
+
+/* ---------- Sugerir cambio ---------- */
+export interface Suggestion { slot: number; fromPid: number; toPid: number; reasons: string[]; sig: string }
+const baseOpts = (team: Team): GenOptions => ({ vg: team.vg, purpose: 'historia', monoType: 0, anchors: [], legends: false });
+
+function candFromMember(db: Db, pool: Pool, m: TeamMember, o: GenOptions): Cand | null {
+  const c = makeCand(db, pool, m.pid, o, 9);
+  if (!c) return null;
+  // Se respetan los tipos y la habilidad que la persona eligió
+  const def = [1, ...TYPES.map((a) => {
+    let x = m.types.reduce((f, d) => f * chartM(db, a, d), 1);
+    const fx = ABIL_DEF[m.abil]?.[a];
+    if (fx !== undefined) x *= fx;
+    return x;
+  })];
+  return { ...c, types: m.types, abil: m.abil, def, quality: c.quality - (ABIL_SCORE[c.abil] ?? 0) * 0.35 + (ABIL_SCORE[m.abil] ?? 0) * 0.35 };
+}
+
+const netWeak = (team: Cand[], a: number) => {
+  let w = 0, r = 0;
+  for (const c of team) { const m = c.def[a]; if (m > 1) w++; else if (m < 1) r++; }
+  return Math.max(0, w - r) + (w >= 3 ? 1 : 0);
+};
+
+function explain(db: Db, before: Cand[], after: Cand[], out: Cand, inn: Cand): string[] {
+  const why: { s: number; t: string }[] = [];
+  const tn = (t: number) => db.meta.types[t]?.[0] ?? '';
+  let bestT = 0, bestGain = 0;
+  for (const a of TYPES) { const g = netWeak(before, a) - netWeak(after, a); if (g > bestGain) { bestGain = g; bestT = a; } }
+  if (bestT) why.push({ s: bestGain * 2, t: `Aguanta mejor los ataques tipo ${tn(bestT)}` });
+  const fast = (t: Cand[]) => t.filter((c) => c.fast).length;
+  if (fast(before) < 2 && fast(after) > fast(before)) why.push({ s: 2.5, t: 'Le suma velocidad al equipo' });
+  const imb = (t: Cand[]) => Math.abs(t.filter((c) => c.role === 2).length * 2 - t.length);
+  if (imb(after) < imb(before) && imb(before) >= 3) why.push({ s: 2, t: 'Balancea ataques físicos y especiales' });
+  const se = (t: Cand[]) => { const st = new Set(t.flatMap((c) => c.types)); return TYPES.filter((d) => [...st].some((a) => chartM(db, a, d) >= 2)).length; };
+  const g = se(after) - se(before);
+  if (g >= 2) why.push({ s: g * 0.7, t: `Sus tipos le pegan súper eficaz a ${g} tipos más` });
+  const dupe = out.types.find((t) => before.filter((c) => c !== out && c.types.includes(t)).length > 0);
+  if (dupe && !inn.types.includes(dupe)) why.push({ s: 1.5, t: `Evita repetir el tipo ${tn(dupe)}` });
+  if (inn.bst - out.bst >= 60) why.push({ s: 1.2, t: `Más fuerte en general (total ${inn.bst} contra ${out.bst})` });
+  if (ABIL_DEF[inn.abil] && !ABIL_DEF[out.abil]) why.push({ s: 1, t: `Su habilidad ${db.abilities[inn.abil]?.[0] ?? ''} le da una inmunidad` });
+  return why.sort((x, y) => y.s - x.s).slice(0, 2).map((x) => x.t);
+}
+
+/** Busca el único cambio que más mejora el equipo. protect: especies que no se tocan (favoritos) */
+export async function suggestSwap(db: Db, pool: Pool, vgDex: Record<string, number[]>, team: Team, protect: Set<number>): Promise<Suggestion | null> {
+  const slots = team.members.map((m, i) => [m, i] as const).filter(([m]) => m) as [TeamMember, number][];
+  if (slots.length < 4 || team.randomizer) return null;
+  const o = baseOpts(team);
+  o.legends = slots.some(([m]) => (pool[m.pid]?.[3] ?? 0) > 0 || QUASI.has(sidOf(db, m.pid)));
+  if (o.legends) o.purpose = 'combates';
+  await preloadFormTypes(db, (vgDex[o.vg] ?? []).filter((p) => db.forms[p] && pool[p]?.[2] && !pool[p]?.[4]));
+  const gen = vgGen(db, o.vg);
+  const current = slots.map(([m]) => candFromMember(db, pool, m, o));
+  if (current.some((c) => !c)) return null;
+  const now = current as Cand[];
+  const cands = candidatePool(db, pool, vgDex, { ...o, purpose: o.legends ? 'combates' : 'historia' }).map((pid) => makeCand(db, pool, pid, o, gen)).filter(Boolean) as Cand[];
+  const base = teamScore(db, now, o);
+  let best: { i: number; c: Cand; s: number } | null = null;
+  now.forEach((out, i) => {
+    if (!pool[out.pid]?.[2] || protect.has(out.sid)) return; // sin evolucionar o favorito: no se toca
+    const rest = now.filter((_, k) => k !== i);
+    for (const c of cands) {
+      if (rest.some((x) => x.sid === c.sid) || c.sid === out.sid) continue;
+      const s = teamScore(db, [...rest, c], o) - base;
+      if (!best || s > best.s) best = { i, c, s };
+    }
+  });
+  const b = best as { i: number; c: Cand; s: number } | null;
+  if (!b || b.s < 3.5) return null; // solo si la mejora se nota de verdad
+  const after = now.map((x, k) => (k === b.i ? b.c : x));
+  const reasons = explain(db, now, after, now[b.i], b.c);
+  if (!reasons.length) return null;
+  return { slot: slots[b.i][1], fromPid: now[b.i].pid, toPid: b.c.pid, reasons, sig: slots.map(([m]) => m.pid).join('-') };
+}
+
+/** Arma el Pokémon sugerido con movimientos, naturaleza, habilidad y objeto */
+export async function buildMember(db: Db, pool: Pool, team: Team, slot: number, pid: number): Promise<TeamMember | null> {
+  const o = baseOpts(team);
+  await preloadFormTypes(db, [pid]);
+  const c = makeCand(db, pool, pid, o, vgGen(db, o.vg));
+  if (!c) return null;
+  const others = team.members.filter((m, i) => m && i !== slot) as TeamMember[];
+  const covered = new Set<number>();
+  for (const m of others) for (const mid of m.moves) { const mv = db.moves[mid]; if (mv && mv[2] !== 1) for (const d of TYPES) if (chartM(db, mv[1], d) >= 2) covered.add(d); }
+  return buildSet(db, c, o, covered, slot, new Set(others.map((m) => m.item).filter(Boolean)));
+}

@@ -1,10 +1,9 @@
 // Novedades que se muestran una vez después de actualizar.
 // Al publicar algo nuevo: cambie "v" y la lista.
 export const CHANGES = {
-  v: '2026-11-23-c',
+  v: '2026-11-23-d',
   items: [
-    'Generador de equipos más inteligente: balancea defensa, cobertura, velocidad y habilidades.',
-    'El análisis de equipos ahora toma en cuenta habilidades como Levitación.',
-    'Este aviso: JuasDex le dice cuando hay una versión nueva.',
+    'Sugerir cambio: en el análisis de un equipo, JuasDex le propone un cambio cuando de verdad ayuda. Lo puede descartar con la ×.',
+    'Nunca le sugiere cambiar a sus favoritos ni a los que todavía no han evolucionado.',
   ],
 };

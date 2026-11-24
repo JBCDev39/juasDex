@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Db, Team, TeamMember, Variety } from '../types';
 import { defense, favs, loadSpecies, loadVgDex, pidInfo, store, teams } from '../data';
-import { generateTeam, loadPool, type GenOptions, type Pool, type Purpose } from '../generator';
+import { buildMember, generateTeam, loadPool, suggestSwap, type GenOptions, type Pool, type Purpose, type Suggestion } from '../generator';
 import { nav } from '../nav';
 import { BackButton, GENS, ItemIcon, MiniMon, MoveClass, Picker, STAT_SHORT, Spinner, Sprite, TypeBadge, reducedMotion, type Opt } from './bits';
 import { glyphPaths } from './glyphs';
@@ -274,7 +274,7 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
             </section>
           )}
 
-          {members.length > 0 && <TeamAnalysis db={db} members={members} />}
+          {members.length > 0 && <TeamAnalysis db={db} members={members} extra={<SwapSuggestion db={db} team={team} setTeam={setTeam} />} />}
 
           <div className="danger-zone">
             {confirmDel ? (
@@ -627,7 +627,7 @@ function analyze(db: Db, members: TeamMember[], pool: Pool | null) {
 
 type Insight = { tone: 'warn' | 'ok' | 'tip'; body: ReactNode };
 
-function TeamAnalysis({ db, members }: { db: Db; members: TeamMember[] }) {
+function TeamAnalysis({ db, members, extra }: { db: Db; members: TeamMember[]; extra?: ReactNode }) {
   const [pool, setPool] = useState<Pool | null>(null);
   const [full, setFull] = useState(false);
   const [pickT, setPickT] = useState<number | null>(null);
@@ -685,6 +685,7 @@ function TeamAnalysis({ db, members }: { db: Db; members: TeamMember[] }) {
         <ul className="insights">
           {ins.map((x, i) => <li key={i} className={`ins ins--${x.tone}`} style={{ '--i': i } as CSSProperties}><span className="ins__dot" aria-hidden />{x.body}</li>)}
         </ul>
+        {extra}
       </section>
 
       <section className="panel">
@@ -751,6 +752,86 @@ function TeamAnalysis({ db, members }: { db: Db; members: TeamMember[] }) {
         )}
       </section>
     </>
+  );
+}
+
+/* ---------- Sugerir cambio ---------- */
+// Una sola sugerencia, pequeña, dentro del análisis. La × la esconde hasta que el equipo cambie.
+const dismissed = () => store.get<Record<string, string>>('swapDismiss', {});
+const dismiss = (id: number, sig: string) => store.set('swapDismiss', { ...dismissed(), [id]: sig });
+
+function SwapSuggestion({ db, team, setTeam }: { db: Db; team: Team; setTeam: (t: Team) => void }) {
+  const [sug, setSug] = useState<Suggestion | null>(null);
+  const [hidden, setHidden] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [undo, setUndo] = useState<{ slot: number; prev: TeamMember; name: string; prevName: string } | null>(null);
+  const sig = team.members.map((m) => m?.pid ?? 0).filter(Boolean).join('-');
+
+  useEffect(() => {
+    let alive = true;
+    setSug(null); setHidden(false);
+    if (team.randomizer || dismissed()[team.id] === sig) return;
+    Promise.all([loadPool(), loadVgDex()])
+      .then(([pool, vgDex]) => suggestSwap(db, pool, vgDex, team, new Set(favs.list())))
+      .then((x) => { if (alive && x && dismissed()[team.id] !== x.sig) setSug(x); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, sig, team.vg, team.randomizer, team.id]);
+
+  useEffect(() => { if (!undo) return; const t = window.setTimeout(() => setUndo(null), 9000); return () => window.clearTimeout(t); }, [undo]);
+
+  if (undo) {
+    return (
+      <div className="sug sug--done" role="status">
+        <span><b>{undo.name}</b> entró por {undo.prevName}.</span>
+        <button className="sug__link" onClick={() => {
+          const members = [...team.members]; members[undo.slot] = undo.prev;
+          const t = { ...team, members }; dismiss(team.id, members.map((m) => m?.pid ?? 0).filter(Boolean).join('-'));
+          setTeam(t); setUndo(null);
+        }}>Deshacer</button>
+      </div>
+    );
+  }
+  if (!sug || hidden) return null;
+  const from = pidInfo(db, sug.fromPid), to = pidInfo(db, sug.toPid);
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const pool = await loadPool();
+      const m = await buildMember(db, pool, team, sug.slot, sug.toPid);
+      if (!m) return;
+      const prev = team.members[sug.slot]!;
+      const members = [...team.members]; members[sug.slot] = m;
+      dismiss(team.id, members.map((x) => x?.pid ?? 0).filter(Boolean).join('-')); // no encadenar otra sugerencia enseguida
+      setTeam({ ...team, members });
+      setUndo({ slot: sug.slot, prev, name: to.name, prevName: from.name });
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="sug">
+      <div className="sug__top">
+        <span className="sug__tag">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          Sugerencia
+        </span>
+        <button className="sug__x" aria-label="Descartar sugerencia" onClick={() => { dismiss(team.id, sug.sig); setHidden(true); }}>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
+        </button>
+      </div>
+      <div className="sug__swap">
+        <span className="sug__mon sug__mon--out"><Sprite db={db} pid={sug.fromPid} size={40} /><span>{from.name}</span></span>
+        <svg className="sug__arrow" viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d="M5 12h13m-5-5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <button className="sug__mon" onClick={() => nav.push(`pokemon-${db.forms[sug.toPid]?.[0] ?? sug.toPid}`)} title={`Ver a ${to.name}`}>
+          <Sprite db={db} pid={sug.toPid} size={40} /><span>{to.name}{to.form ? <small> {to.form}</small> : null}</span>
+        </button>
+      </div>
+      <ul className="sug__why">{sug.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+      <div className="sug__actions">
+        <small>Se arma con movimientos y objeto. Puede deshacerlo.</small>
+        <button className="sug__go" disabled={busy} onClick={apply}>{busy ? 'Cambiando…' : 'Cambiar'}</button>
+      </div>
+    </div>
   );
 }
 

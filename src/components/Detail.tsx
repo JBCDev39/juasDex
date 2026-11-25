@@ -436,7 +436,7 @@ function EvoTree({ db, node, current, rootHow, depth = 0 }: { db: Db; node: EvoN
 /** Versión corta de la condición para que quepa debajo de la flecha ("Usar Piedra Trueno" → "Piedra Trueno") */
 const shortHow = (x: string) => {
   const t = x.replace(/^Usar /, '').replace(/^Subir de nivel con /, '').replace(/^Subir de nivel cerca de una? /, 'Cerca de ')
-    .replace(/^Subir de nivel conociendo /, 'Conociendo ').replace(/^Subir de nivel /, 'Nivel ');
+    .replace(/^Subir de nivel conociendo /, 'Conociendo ').replace(/^Subir de nivel /, 'Nivel ').replace(/^Nivel (\d+)$/, 'Nv. $1');
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
 /** Flecha con la condición de evolución debajo (o al lado, si apunta hacia abajo) */
@@ -455,7 +455,7 @@ function EvoCard({ db, id, current, i }: { db: Db; id: number; current: number; 
   return (
     <button className={`evo__card${id === current ? ' is-on' : ''}`} style={{ '--i': Math.min(i, 10) } as CSSProperties} onClick={() => id !== current && nav.replace(`pokemon-${id}`)}>
       <Sprite db={db} pid={id} size={60} />
-      <span className="evo__name">{e?.[1]}</span>
+      <span className="evo__name" style={{ '--len': Math.max(6, (e?.[1] ?? '').length) } as CSSProperties}>{e?.[1]}</span>
       <span className="evo__types">{e?.[2].map((t) => <i key={t} className={`dot t-${ident(db, t)}`} />)}</span>
     </button>
   );

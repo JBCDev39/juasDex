@@ -1,6 +1,8 @@
 // Navegación por el hash (#pokemon-25, #mov-89, #hab-26).
 // Cada pantalla que se abre se apila en el historial; "atrás" la quita.
 // Anterior/siguiente reemplazan la pantalla actual para no llenar el historial.
+// Los paneles temporales (menús, filtros) también ocupan entradas: ver backstack.ts.
+import { afterBack, goBack, popupsHere, popupsOpen } from './backstack';
 
 export type RouteKind = 'pokemon' | 'mov' | 'hab' | 'obj' | 'equipo' | 'equipos' | 'importar' | 'generar';
 export type Route = { kind: RouteKind; id: number; data?: string } | null;
@@ -22,28 +24,33 @@ const url = (hash: string) => (hash ? `#${hash}` : location.pathname + location.
 export const nav = {
   /** Abre una pantalla nueva encima */
   push(hash: string, dir = '') {
-    setDir(dir);
-    history.pushState({ d: depth() + 1 }, '', url(hash));
-    fire();
+    afterBack(() => {
+      setDir(dir);
+      history.pushState({ d: depth() + 1 }, '', url(hash));
+      fire();
+    });
   },
   /** Cambia la pantalla actual sin apilar */
   replace(hash: string, dir = '') {
-    setDir(dir);
-    history.replaceState({ d: depth() }, '', url(hash));
-    fire();
+    afterBack(() => {
+      setDir(dir);
+      history.replaceState({ d: depth() }, '', url(hash));
+      fire();
+    });
   },
   /** Vuelve a la pantalla anterior (o a la lista si se entró directo por un enlace) */
   back() {
     setDir('');
-    if (depth() > 0) history.back();
-    else nav.replace('');
+    const k = popupsHere(); // si hay menús abiertos en esta pantalla, se saltan también
+    if (depth() > 0) goBack(k + 1);
+    else { goBack(k); nav.replace(''); }
   },
   /** Vuelve hasta la lista */
   home() {
     setDir('');
     const d = depth();
-    if (d > 0) history.go(-d);
-    else nav.replace('');
+    if (d > 0) goBack(d + popupsOpen());
+    else { goBack(popupsOpen()); nav.replace(''); }
   },
   depth,
 };

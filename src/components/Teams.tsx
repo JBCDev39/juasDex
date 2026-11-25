@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Db, Team, TeamMember, Variety } from '../types';
 import { defense, favs, loadSpecies, loadVgDex, pidInfo, store, teams } from '../data';
+import { useBackClose } from '../backstack';
 import { buildMember, generateTeam, loadPool, loadStory, starterTrio, storySpecies, suggestSwap, type GenOptions, type Pool, type Purpose, type Story, type Suggestion } from '../generator';
 import { nav } from '../nav';
 import { BackButton, GENS, ItemIcon, MiniMon, MoveClass, Picker, STAT_SHORT, Spinner, Sprite, TypeBadge, reducedMotion, type Opt } from './bits';
@@ -29,6 +30,7 @@ export function TeamsPage({ db }: { db: Db }) {
   const list = teams.list();
   const create = () => { const t = teams.create(); nav.push(`equipo-${t.id}`); };
   const [importing, setImporting] = useState(false);
+  useBackClose(importing, () => setImporting(false));
   const [text, setText] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -120,6 +122,9 @@ export function TeamPage({ db, id }: { db: Db; id: number }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState('');
+  useBackClose(view.kind !== 'team', () => setView({ kind: 'team' }));
+  useBackClose(sharing, () => setSharing(false));
+  useBackClose(confirmDel, () => setConfirmDel(false));
   const [sdText, setSdText] = useState('');
   const [note] = useState(() => { const n = store.get('importNote', ''); store.set('importNote', ''); return n; });
 

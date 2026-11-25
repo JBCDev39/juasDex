@@ -6,6 +6,7 @@ import { Ball, Chevron, FLAVORS, GENS, ItemIcon, MoveClass, Picker, REGIONS, STA
 import { glyphPaths } from './glyphs';
 import PlacesView, { filterPlaces, loadPlaces, placeVersions, type Place } from './Places';
 import { flight } from '../flight';
+import { useBackClose } from '../backstack';
 import { nav } from '../nav';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -56,6 +57,9 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const [listFilters, setListFilters] = useState(false);
   const [ready, setReady] = useState(false);
   const [past, setPast] = useState(false);
+  useBackClose(Boolean(panel), () => setPanel(''));
+  useBackClose(listFilters, () => setListFilters(false));
+  useBackClose(listSearch, () => { setListSearch(false); listInput.current?.blur(); });
   const input = useRef<HTMLInputElement>(null);
   const listInput = useRef<HTMLInputElement>(null);
   const padsRef = useRef<HTMLDivElement>(null);

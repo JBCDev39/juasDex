@@ -1,4 +1,5 @@
 import { uiZoom } from '../zoom';
+import { useBackClose } from '../backstack';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Db } from '../types';
@@ -182,6 +183,7 @@ export function Picker({ title, value, options, onChange, layout = 'list', tone 
     if (refocus) btn.current?.focus();
   };
 
+  useBackClose(shown, () => hide(false));
   useEffect(() => {
     if (!shown) return undefined;
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') hide(); };

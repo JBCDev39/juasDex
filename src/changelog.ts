@@ -1,10 +1,10 @@
 // Novedades que se muestran una vez después de actualizar.
 // Al publicar algo nuevo: cambie "v" y la lista.
 export const CHANGES = {
-  v: '2026-11-24-b',
+  v: '2026-11-24-c',
   items: [
-    'Pokédex por juego: en Región, toque "Por juego" y vea solo los Pokémon de ese juego, con su número regional.',
-    'Nueva sección Lugares: elija un juego y vea qué Pokémon salen en cada ruta, cueva o zona. También puede buscar un Pokémon.',
-    'Ubicaciones nuevas para Diamante Brillante, Perla Reluciente, Leyendas: Arceus, Escarlata, Púrpura y Leyendas: Z-A.',
+    'El gesto de atrás de Android ahora cierra menús, filtros y paneles en vez de salir de la pantalla.',
+    'Pestañas de la ficha con más espacio y nombres de la línea evolutiva siempre dentro de su tarjeta.',
+    'Arreglos: el sombreado al tocar una tarjeta y el texto encimado en los movimientos del equipo.',
   ],
 };

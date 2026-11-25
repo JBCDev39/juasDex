@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Db, EvoNode, Species, Variety } from '../types';
 import { defense, favs, fmt, loadSpecies, pad, store } from '../data';
 import { BackButton, Chevron, GENS, MoveClass, Picker, REGIONS, Spinner, Sprite, TypeBadge, reducedMotion, type Opt } from './bits';
@@ -40,6 +40,16 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
     return (TABS as readonly string[]).includes(t) ? (t as Tab) : 'Datos';
   });
   const touch = useRef<{ x: number; y: number } | null>(null);
+  // Mini encabezado: aparece cuando la tarjeta grande del Pokémon sale de la pantalla
+  const heroRef = useRef<HTMLElement>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el || !('IntersectionObserver' in window)) return undefined;
+    const io = new IntersectionObserver(([e]) => setCompact(!e.isIntersecting && e.boundingClientRect.top < 0), { threshold: 0, rootMargin: '-64px 0px 0px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -98,6 +108,7 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
       </header>
 
       <section
+        ref={heroRef}
         className="hero"
         onTouchStart={(e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
         onTouchEnd={(e) => {
@@ -170,7 +181,21 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
         </div>
       </section>
 
-      <Tabs tab={tab} onChange={chooseTab} />
+      <Tabs tab={tab} onChange={chooseTab} mini={(
+        <div className={`minihead${compact ? ' is-on' : ''}`} aria-hidden={!compact}>
+          <div className="minihead__inner">
+            <button className="minihead__back" onClick={back} aria-label="Atrás" tabIndex={compact ? 0 : -1}>
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+            <span className="minihead__sprite"><Sprite db={db} pid={v?.pid ?? id} size={40} fallback={id} /></span>
+            <span className="minihead__id">
+              <small>#{pad(id)}</small>
+              <strong>{v && vi > 0 ? v.name : entry[1]}</strong>
+            </span>
+            <span className="minihead__types">{types.map((t) => <TypeBadge key={t} db={db} id={t} small />)}</span>
+          </div>
+        </div>
+      )} />
 
       <main className="body">
         {failed && <div className="empty">No se pudieron cargar los datos. ¿Tiene conexión? Intente de nuevo.</div>}
@@ -189,7 +214,7 @@ export default function Detail({ db, id }: { db: Db; id: number }) {
 }
 
 /* ---------- Pestañas con indicador deslizante ---------- */
-function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+function Tabs({ tab, onChange, mini }: { tab: Tab; onChange: (t: Tab) => void; mini?: ReactNode }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [bar, setBar] = useState<CSSProperties>({ opacity: 0 });
   useLayoutEffect(() => {
@@ -204,6 +229,7 @@ function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
   }, [tab]);
   return (
     <nav className="tabs" aria-label="Secciones">
+      {mini}
       <div className="tabs__inner" ref={wrap}>
         {TABS.map((t) => (
           <button key={t} className={`tab${t === tab ? ' is-on' : ''}`} onClick={() => onChange(t)}>{t}</button>

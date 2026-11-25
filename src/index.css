@@ -1146,3 +1146,30 @@ button.sug__mon span { text-decoration: underline; text-decoration-color: color-
 .lmon__rate { min-width: 42px; text-align: right; font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; }
 @media (min-width: 760px) { .lplist { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
 @media (prefers-reduced-motion: reduce) { .lplace__body { animation: none; } }
+
+/* ---------- Ficha: mini encabezado al bajar ---------- */
+.minihead { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.32s var(--ease); background: color-mix(in srgb, var(--tc) 22%, #15191e); color: #fff; }
+.minihead.is-on { grid-template-rows: 1fr; }
+.minihead__inner { min-height: 0; overflow: hidden; display: flex; align-items: center; gap: 8px; max-width: 1100px; margin: 0 auto; width: 100%; padding: 0 max(calc(4vw / var(--z)), 8px); opacity: 0; transform: translateY(-6px); transition: opacity 0.25s var(--ease), transform 0.32s var(--ease); }
+.minihead.is-on .minihead__inner { opacity: 1; transform: none; padding-top: 4px; padding-bottom: 4px; }
+.minihead__back { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; border-radius: 12px; background: rgb(255 255 255 / 0.1); color: #fff; }
+.minihead__sprite { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 12px; background: color-mix(in srgb, var(--tc) 55%, #15191e); }
+.minihead__id { display: grid; min-width: 0; flex: 1; line-height: 1.15; }
+.minihead__id small { font: 600 12px/1.2 var(--display); color: color-mix(in srgb, var(--tc) 55%, #fff); }
+.minihead__id strong { font: 700 17px/1.15 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.minihead__types { display: flex; gap: 4px; flex: none; }
+@media (max-width: 380px) { .minihead__types .type { padding: 0 7px; font-size: 11.5px; } }
+@media (prefers-reduced-motion: reduce) { .minihead, .minihead__inner { transition: none; } }
+
+/* ---------- Ficha teñida con el color de su tipo ---------- */
+.detail { background: var(--bg); overflow-x: clip; }
+/* Brillo del color del tipo justo debajo de las pestañas */
+.detail .body { position: relative; isolation: isolate; }
+.detail .body::before { content: ''; position: absolute; z-index: -1; top: 0; left: calc(50% - 50vw); width: 100vw; height: 640px; pointer-events: none;
+  background: radial-gradient(90% 100% at 50% 0, color-mix(in srgb, var(--tc) 24%, transparent), transparent 72%); }
+.detail .panel { background: color-mix(in srgb, var(--tc) 4%, var(--card)); }
+.detail .tabs { background: color-mix(in srgb, color-mix(in srgb, var(--tc) 7%, var(--bg)) 90%, transparent); }
+.detail .tabs__bar { background: var(--tc); }
+.detail .tab.is-on { color: color-mix(in srgb, var(--tc) 35%, var(--ink)); }
+.detail .panel { border-color: color-mix(in srgb, var(--tc) 22%, var(--line)); }
+.detail .hero { background: linear-gradient(180deg, #c3132a, color-mix(in srgb, var(--red) 82%, var(--tc))); }

@@ -57,6 +57,23 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const [listFilters, setListFilters] = useState(false);
   const [ready, setReady] = useState(false);
   const [past, setPast] = useState(false);
+  // Secreto: tocar las tres luces 10 veces seguidas
+  const [party, setParty] = useState(false);
+  const leds = useRef<HTMLButtonElement>(null);
+  const taps = useRef({ n: 0, t: 0 });
+  const tapLeds = () => {
+    const now = Date.now(), t = taps.current;
+    t.n = now - t.t < 1200 ? t.n + 1 : 1;
+    t.t = now;
+    const el = leds.current;
+    if (el) { el.style.setProperty('--charge', String(Math.min(t.n, 10) / 10)); el.classList.remove('is-tap'); void el.offsetWidth; el.classList.add('is-tap'); }
+    if (t.n >= 10 && !party) {
+      t.n = 0;
+      setParty(true);
+      navigator.vibrate?.([30, 50, 30, 50, 120]);
+      window.setTimeout(() => { setParty(false); el?.style.setProperty('--charge', '0'); }, reducedMotion() ? 1200 : 3400);
+    }
+  };
   useBackClose(Boolean(panel), () => setPanel(''));
   useBackClose(listFilters, () => setListFilters(false));
   useBackClose(listSearch, () => { setListSearch(false); listInput.current?.blur(); });
@@ -287,10 +304,10 @@ export default function List({ db }: { db: Db; stamp?: number }) {
   const instant = anchorList.current && (listSearch || listFilters || past);
 
   return (
-    <div className={`home${active ? ' is-active' : ''}${panel ? ' has-panel' : ''}${instant ? ' is-instant' : ''}`}>
+    <div className={`home${active ? ' is-active' : ''}${panel ? ' has-panel' : ''}${instant ? ' is-instant' : ''}${party ? ' is-party' : ''}`}>
       <header className="home__hero" ref={hero}>
         <Ball className="home__ball" size={520} />
-        <span className="leds" aria-hidden><i /><i /><i /></span>
+        <button ref={leds} className="leds" onClick={tapLeds} aria-label="Luces" tabIndex={-1}><i /><i /><i /></button>
         <button className="teams-btn" onClick={() => nav.push('equipos')} aria-label="Equipos" title="Equipos">
           <svg viewBox="0 0 40 40" width="34" height="34" aria-hidden>
             {([[11.5, 25, '#e62829'], [28.5, 25, '#2980ef'], [20, 12, '#ffd23f']] as const).map(([cx, cy, top], i) => (
@@ -303,7 +320,16 @@ export default function List({ db }: { db: Db; stamp?: number }) {
           </svg>
         </button>
         <div className="home__inner" ref={homeInner}>
-          <h1 className="wordmark">JuasDex</h1>
+          <h1 className="wordmark" aria-label="JuasDex">
+            {[...'JuasDex'].map((c, i) => <span key={i} style={{ '--i': i } as CSSProperties} aria-hidden>{c}</span>)}
+            {party && (
+              <span className="burst" aria-hidden>
+                {['fire', 'water', 'grass', 'electric', 'psychic', 'dragon', 'fairy', 'ice', 'ghost', 'fighting', 'flying', 'dark'].map((t, i) => (
+                  <svg key={t} className={`burst__p t-${t}`} viewBox="0 0 24 24" style={{ '--a': `${i * 30 + 8}deg`, '--j': i } as CSSProperties}>{glyphPaths(t)}</svg>
+                ))}
+              </span>
+            )}
+          </h1>
 
           <div className={`pads${searching ? ' is-searching' : ''}`} ref={padsRef}>
             <PadButton ref={searchPad} label={q ? `«${q}»` : 'Buscar'} color="white" on={Boolean(q)} onClick={openSearch} extraClass="pad--search">

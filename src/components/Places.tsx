@@ -53,13 +53,16 @@ export default function PlacesView({ db, version, onVersion, list, loading, fail
   const toggle = (k: string) => setOpenSet((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
   return (
-    <div className="places">
-      <div className="places__game">
-        <span className="places__label">Juego</span>
+    <div className="lugares">
+      <div className="lugares__game">
+        <h3 className="lugares__title">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Zm0 0v14m6-12v14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" /></svg>
+          ¿En qué juego?
+        </h3>
         <Picker title="Elija un juego" value={version} options={opts} onChange={(v) => { onVersion(v); setOpenSet(new Set()); }} searchable />
       </div>
       {failed && <div className="empty">Diay, no se pudieron cargar los lugares. ¿Tiene conexión?</div>}
-      {loading && !list && <div className="places__loading">Cargando lugares…</div>}
+      {loading && !list && <div className="lugares__loading">Cargando lugares…</div>}
       {list && list.length === 0 && <div className="empty">No hay ningún lugar ni Pokémon con ese nombre en este juego.</div>}
       {list && list.length > 0 && (
         <ul className="lplist">

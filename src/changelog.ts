@@ -1,10 +1,10 @@
 // Novedades que se muestran una vez después de actualizar.
 // Al publicar algo nuevo: cambie "v" y la lista.
 export const CHANGES = {
-  v: '2026-11-24-d',
+  v: '2026-11-24-e',
   items: [
-    'Cada ficha toma el color del tipo del Pokémon: brillo de fondo, pestañas y tarjetas.',
-    'Mini encabezado: al bajar en una ficha, arriba queda el Pokémon con su nombre, número y tipos.',
-    'La barra del teléfono (hora y batería) cambia de color para combinar con la pantalla.',
+    'Lugares: encabezado nuevo para elegir el juego.',
+    'En computadora, las pestañas de la lista ya caben completas.',
+    'Hay un secreto escondido en el inicio. Suerte encontrándolo.',
   ],
 };
